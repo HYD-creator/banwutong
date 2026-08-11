@@ -31,6 +31,7 @@ function persist() {
   }
 }
 async function apiFetch(url, options = {}) {
+  if (window.location.protocol === "file:") throw new Error("请通过 http://localhost:8000 打开班务通");
   const response = await fetch(url, { credentials: "same-origin", headers: { "content-type": "application/json", ...(options.headers || {}) }, ...options });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "请求失败");

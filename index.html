@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>班务通</title>
+  <script>
+    if (window.location.protocol === "file:") {
+      window.location.replace("http://localhost:8000/login");
+    }
+  </script>
   <link rel="icon" href="./public/favicon.svg?v=3" />
   <link rel="stylesheet" href="./styles.css?v=6" />
 </head>
