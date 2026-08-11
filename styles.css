@@ -150,6 +150,13 @@ tr:last-child td { border-bottom: 0; }
 .student-row { display: grid; grid-template-columns: 1fr 120px 70px 64px 40px; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .student-row:last-child { border-bottom: 0; }
 .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+.notice-list { display:grid; gap:14px; }
+.notice-item { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:22px; }
+.notice-item p { margin:0 0 12px; font-size:16px; line-height:1.8; white-space:pre-wrap; }
+.notice-item small { color:var(--muted); }
+.field-inline { display:flex; align-items:center; gap:10px; font-weight:700; }
+.field-inline .select { min-width:280px; }
+.status-switch { display:flex; flex-wrap:wrap; gap:7px; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(23,32,51,.42); backdrop-filter: blur(3px); }
 .modal { width: min(520px,100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 30px 80px rgba(19,33,60,.25); }
 .preview-modal { width:min(1180px,96vw); }
