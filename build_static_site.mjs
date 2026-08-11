@@ -14,9 +14,24 @@ await writeFile("dist/static/app.js", js);
 await cp("public/favicon.svg", "dist/static/favicon.svg");
 await cp(".openai/hosting.json", "dist/.openai/hosting.json");
 
-const worker = `export default {
-  async fetch(request, env) {
-    return env.ASSETS.fetch(request);
+const worker = `const files = {
+  "/": { body: ${JSON.stringify(html)}, type: "text/html; charset=utf-8" },
+  "/index.html": { body: ${JSON.stringify(html)}, type: "text/html; charset=utf-8" },
+  "/styles.css": { body: ${JSON.stringify(css)}, type: "text/css; charset=utf-8" },
+  "/app.js": { body: ${JSON.stringify(js)}, type: "text/javascript; charset=utf-8" }
+};
+
+export default {
+  async fetch(request) {
+    const pathname = new URL(request.url).pathname;
+    const file = files[pathname] ?? (pathname.includes(".") ? null : files["/"]);
+    if (!file) return new Response("Not found", { status: 404 });
+    return new Response(file.body, {
+      headers: {
+        "content-type": file.type,
+        "cache-control": "public, max-age=300"
+      }
+    });
   }
 };
 `;
