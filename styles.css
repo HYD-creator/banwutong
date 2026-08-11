@@ -20,8 +20,8 @@ button { cursor: pointer; }
 .app-shell { min-height: 100vh; }
 .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 19px; }
-.brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: transparent; font-size:0; background: linear-gradient(135deg, #2f6fe4, #63a1ff); box-shadow: 0 7px 16px rgba(47,111,228,.24); }
-.brand-mark:before { content:""; width:20px; height:20px; background:radial-gradient(circle at 4px 4px,#fff 0 4px,transparent 4.5px),radial-gradient(circle at 16px 4px,rgba(255,255,255,.78) 0 4px,transparent 4.5px),radial-gradient(circle at 4px 16px,rgba(255,255,255,.78) 0 4px,transparent 4.5px),radial-gradient(circle at 16px 16px,#fff 0 4px,transparent 4.5px); }
+.brand-mark { position:relative; width:36px; height:36px; flex:0 0 36px; border-radius:11px; color:transparent; font-size:0; line-height:0; background:linear-gradient(135deg,#2f6fe4,#63a1ff); box-shadow:0 7px 16px rgba(47,111,228,.24); }
+.brand-mark:before { content:""; position:absolute; inset:8px; background:radial-gradient(circle at 4px 4px,#fff 0 4px,transparent 4.25px),radial-gradient(circle at 16px 4px,rgba(255,255,255,.82) 0 4px,transparent 4.25px),radial-gradient(circle at 4px 16px,rgba(255,255,255,.82) 0 4px,transparent 4.25px),radial-gradient(circle at 16px 16px,#fff 0 4px,transparent 4.25px); }
 .top-actions, .row { display: flex; align-items: center; gap: 10px; }
 .user-chip { padding: 7px 11px 7px 8px; border:0; border-radius: 999px; background: #f3f6fb; display: flex; gap: 8px; align-items: center; color:var(--ink); font-size: 14px; cursor:pointer; }
 .user-chip:hover { background:#eaf1ff; }
@@ -95,6 +95,9 @@ tr:last-child td { border-bottom: 0; }
 .toolbar-spacer { flex: 1; }
 .notice { padding: 12px 14px; border-radius: 10px; background: #fff7e8; color: #946019; font-size: 13px; }
 .attendance-legend { display:flex; justify-content:flex-end; gap:8px; margin-bottom:14px; }
+.date-filter { display:flex; align-items:center; gap:10px; font-weight:750; }
+.date-filter .input { width:190px; }
+.table-wrap th small { display:block; margin-top:4px; color:#8b95a7; font-size:11px; font-weight:500; }
 .attendance-options { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
 .attendance-toggle { min-height:34px; padding:6px 9px; border:1px solid var(--line); border-radius:999px; background:#f1f4f9; color:#5d687b; display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; font-weight:700; white-space:nowrap; }
 .attendance-toggle:hover { border-color:#b8c6dc; }
@@ -151,6 +154,8 @@ tr:last-child td { border-bottom: 0; }
 .field-inline .select { min-width:280px; }
 .status-switch { display:flex; flex-wrap:wrap; gap:7px; }
 .linked-note { display:inline-block; margin-left:9px; padding:3px 7px; border-radius:999px; background:#fff0f0; color:var(--red); font-size:11px; font-weight:700; }
+.linked-status { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border-radius:9px; background:#fff0f0; color:var(--red); font-weight:750; }
+.linked-status small { color:#a35c5c; font-weight:500; }
 .homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
 .homework-date-bar .input { width:220px; }
 .homework-list { display:grid; gap:12px; padding-top:18px; }

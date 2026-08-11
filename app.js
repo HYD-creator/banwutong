@@ -65,7 +65,7 @@ function esc(s="") { return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<"
 function localDateValue(date=new Date()) { const offset=date.getTimezoneOffset()*60000; return new Date(date.getTime()-offset).toISOString().slice(0,10); }
 function assignmentDate(item) { return item.date || localDateValue(new Date(item.createdAt)); }
 function assignmentWeekday(item) { const day=new Date(`${assignmentDate(item)}T12:00:00`).getDay(); return day>=1&&day<=5?DAYS[day-1]:null; }
-function homeworkLeaveLinked(item,studentId) { const day=assignmentWeekday(item); return day?isLeave(studentId,day):false; }
+function homeworkLeaveLinked(item,studentId) { return isLeaveOnDate(studentId,assignmentDate(item)); }
 function homeworkStudentStatus(item,studentId) { return homeworkLeaveLinked(item,studentId)?'请假':(state.homeworkStatus?.[`${item.id}:${studentId}`]||'未交'); }
 function route(view) { state.view = view; state.picker = null; if(view==='homework'){state.homeworkDetailId=null;state.homeworkDate||=localDateValue();} persist(); render(); }
 function currentClass() { return state.classInfo?.name || "尚未创建班级"; }
@@ -90,8 +90,12 @@ function classCreationForm() {
 }
 function getCell(schedule, taskId, day) { return schedule[`${taskId}:${day}`] || []; }
 function setCell(taskId, day, ids) { state.draft[`${taskId}:${day}`] = ids; state.draftDirty = true; persist(); }
-function isLeave(studentId, day) { return !!state.leaves[`${studentId}:${day}`]; }
-function isLate(studentId, day) { return !!state.lates?.[`${studentId}:${day}`]; }
+function weekdayLabel(dateValue) { const day=new Date(`${dateValue}T12:00:00`).getDay(); return day>=1&&day<=5?DAYS[day-1]:null; }
+function isLeaveOnDate(studentId,dateValue) { const day=weekdayLabel(dateValue); return !!state.leaves[`${studentId}:${dateValue}`]||!!(day&&state.leaves[`${studentId}:${day}`]); }
+function isLateOnDate(studentId,dateValue) { const day=weekdayLabel(dateValue); return !!state.lates?.[`${studentId}:${dateValue}`]||!!(day&&state.lates?.[`${studentId}:${day}`]); }
+function weekDates(anchorValue) { const anchor=new Date(`${anchorValue}T12:00:00`);const monday=new Date(anchor);const day=anchor.getDay()||7;monday.setDate(anchor.getDate()-day+1);return DAYS.map((label,index)=>{const date=new Date(monday);date.setDate(monday.getDate()+index);return {label,date:localDateValue(date)};}); }
+function hasUpcomingLeaveOnWeekday(studentId,day) { const today=localDateValue();return Object.keys(state.leaves||{}).some(key=>{const [id,value]=key.split(':');return id===studentId&&((value===day)||(/^\d{4}-\d{2}-\d{2}$/.test(value)&&value>=today&&weekdayLabel(value)===day));}); }
+function isLeave(studentId, day) { return hasUpcomingLeaveOnWeekday(studentId,day); }
 
 function loginPage() {
   return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" value="13800000000" maxlength="11" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" value="123456" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button type="button" class="btn small soft" data-action="forgot">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <button type="button" class="btn small" data-action="register">立即注册</button></p></form></section></div>`;
@@ -141,7 +145,7 @@ function pickerCell(task, day) {
   return `<td><div class="student-picker"><button class="${names.length?'filled':''}" data-picker="${task.id}|${day}">${names.length?names.map(s=>`<span class="${isLeave(s.id,day)?'leave-name':''}">${esc(s.name)}</span>`).join('、'):'+ 选择学生'} (${names.length}/${task.count})</button>${open?pickerPop(task,day,ids):''}</div></td>`;
 }
 function pickerPop(task,day,ids) {
-  return `<div class="picker-pop">${state.students.map(s=>`<label class="${isLeave(s.id,day)?'leave':''}"><input type="checkbox" data-pick-student="${s.id}" ${ids.includes(s.id)?'checked':''} ${isLeave(s.id,day)?'disabled':''}/> ${esc(s.name)} ${isLeave(s.id,day)?'（请假）':''}</label>`).join("")}<div class="picker-foot"><span class="sub">已选 ${ids.length}/${task.count}</span><button class="btn small primary" data-action="close-picker">完成</button></div></div>`;
+  return `<div class="picker-pop">${state.students.map(s=>`<label class="${isLeave(s.id,day)?'leave':''}"><input type="checkbox" data-pick-student="${s.id}" ${ids.includes(s.id)?'checked':''}/> ${esc(s.name)} ${isLeave(s.id,day)?'（未来请假）':''}</label>`).join("")}<div class="picker-foot"><span class="sub">已选 ${ids.length}/${task.count}</span><button class="btn small primary" data-action="close-picker">完成</button></div></div>`;
 }
 function announcementsPage() {
   const items=[...(state.announcements||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -159,10 +163,11 @@ function homeworkPage() {
   }
   const counts={已交:0,未交:0,请假:0};
   state.students.forEach(s=>counts[homeworkStudentStatus(current,s.id)]++);
-  return shell(`<div class="hero"><div><span class="eyebrow">${esc(current.subject)} · ${esc(assignmentDate(current))}</span><h1>${esc(current.title)}</h1><p class="sub">请假状态会按作业日期自动关联考勤。</p></div><div class="row"><button class="btn" data-action="back-homework-list">返回作业列表</button><button class="btn" data-action="export-homework">导出 CSV</button><button class="btn danger" data-delete-assignment="${current.id}">删除作业</button></div></div><div class="card pad"><div class="toolbar"><strong>提交情况</strong><button class="btn small soft" data-homework-bulk="${current.id}|已交">一键全部已提交</button><button class="btn small" data-homework-bulk="${current.id}|未交">一键全部未提交</button><div class="toolbar-spacer"></div><span class="pill green">已交 ${counts.已交}</span><span class="pill orange">未交 ${counts.未交}</span><span class="pill">请假 ${counts.请假}</span></div><div class="table-wrap"><table><thead><tr><th>学生</th><th>学号</th><th>提交状态</th></tr></thead><tbody>${state.students.map(s=>{const linked=homeworkLeaveLinked(current,s.id);const status=homeworkStudentStatus(current,s.id);return `<tr><td><strong>${esc(s.name)}</strong>${linked?`<small class="linked-note">考勤已请假</small>`:''}</td><td>${esc(s.number||'—')}</td><td><div class="status-switch">${['已交','未交','请假'].map(x=>`<button class="btn small ${status===x?'primary':''}" data-homework-status="${current.id}|${s.id}|${x}" ${linked?'disabled':''}>${x}</button>`).join('')}</div></td></tr>`}).join('')}</tbody></table></div></div>`,"homework");
+  return shell(`<div class="hero"><div><span class="eyebrow">${esc(current.subject)} · ${esc(assignmentDate(current))}</span><h1>${esc(current.title)}</h1><p class="sub">请假状态会按作业日期自动关联考勤。</p></div><div class="row"><button class="btn" data-action="back-homework-list">返回作业列表</button><button class="btn" data-action="export-homework">导出 CSV</button><button class="btn danger" data-delete-assignment="${current.id}">删除作业</button></div></div><div class="card pad"><div class="toolbar"><strong>提交情况</strong><button class="btn small soft" data-homework-bulk="${current.id}|已交">一键全部已提交</button><button class="btn small" data-homework-bulk="${current.id}|未交">一键全部未提交</button><div class="toolbar-spacer"></div><span class="pill green">已交 ${counts.已交}</span><span class="pill orange">未交 ${counts.未交}</span><span class="pill">请假 ${counts.请假}</span></div><div class="table-wrap"><table><thead><tr><th>学生</th><th>学号</th><th>提交状态</th></tr></thead><tbody>${state.students.map(s=>{const linked=homeworkLeaveLinked(current,s.id);const status=homeworkStudentStatus(current,s.id);return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.number||'—')}</td><td>${linked?`<span class="linked-status">请假 <small>考勤自动关联</small></span>`:`<div class="status-switch">${['已交','未交','请假'].map(x=>`<button class="btn small ${status===x?'primary':''}" data-homework-status="${current.id}|${s.id}|${x}">${x}</button>`).join('')}</div>`}</td></tr>`}).join('')}</tbody></table></div></div>`,"homework");
 }
 function attendancePage() {
-  return shell(`<div class="hero"><div><span class="eyebrow">考勤管理</span><h1>学生考勤登记</h1><p class="sub">请假会与值日排班联动；迟到仅作为考勤记录，不影响值日表和随机点名。</p></div></div><div class="card pad"><div class="attendance-legend"><span class="pill">正常</span><span class="pill red">已请假</span><span class="pill orange">已迟到</span></div><div class="table-wrap"><table style="min-width:980px"><thead><tr><th>学生</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${state.students.map(s=>`<tr><td><strong>${esc(s.name)}</strong></td>${DAYS.map(d=>`<td><div class="attendance-options"><button type="button" class="attendance-toggle ${isLeave(s.id,d)?'selected leave':''}" data-attendance="leave|${s.id}|${d}" aria-pressed="${isLeave(s.id,d)}"><span class="attendance-check">${isLeave(s.id,d)?'✓':''}</span><span>请假</span></button><button type="button" class="attendance-toggle ${isLate(s.id,d)?'selected late':''}" data-attendance="late|${s.id}|${d}" aria-pressed="${isLate(s.id,d)}"><span class="attendance-check">${isLate(s.id,d)?'✓':''}</span><span>迟到</span></button></div></td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`,"attendance");
+  const focus=state.attendanceFocusDate||localDateValue();const dates=weekDates(focus);
+  return shell(`<div class="hero"><div><span class="eyebrow">考勤管理</span><h1>学生考勤登记</h1><p class="sub">按具体日期记录；今天请假不参与点名，未来请假只在值日表中变灰提醒。</p></div><label class="date-filter">选择日期 <input class="input" id="attendance-date" type="date" value="${esc(focus)}" /></label></div><div class="card pad"><div class="attendance-legend"><span class="pill">正常</span><span class="pill red">已请假</span><span class="pill orange">已迟到</span></div><div class="table-wrap"><table style="min-width:1100px"><thead><tr><th>学生</th>${dates.map(item=>`<th>${item.label}<small>${item.date.slice(5).replace('-','/')}</small></th>`).join("")}</tr></thead><tbody>${state.students.map(s=>`<tr><td><strong>${esc(s.name)}</strong></td>${dates.map(item=>`<td><div class="attendance-options"><button type="button" class="attendance-toggle ${isLeaveOnDate(s.id,item.date)?'selected leave':''}" data-attendance="leave|${s.id}|${item.date}" aria-pressed="${isLeaveOnDate(s.id,item.date)}"><span class="attendance-check">${isLeaveOnDate(s.id,item.date)?'✓':''}</span><span>请假</span></button><button type="button" class="attendance-toggle ${isLateOnDate(s.id,item.date)?'selected late':''}" data-attendance="late|${s.id}|${item.date}" aria-pressed="${isLateOnDate(s.id,item.date)}"><span class="attendance-check">${isLateOnDate(s.id,item.date)?'✓':''}</span><span>迟到</span></button></div></td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`,"attendance");
 }
 function studentsPage() {
   return shell(`<div class="hero"><div><span class="eyebrow">基础资料</span><h1>学生名单管理</h1><p class="sub">当前共 ${state.students.length} 名学生。</p></div><div class="row"><input type="file" id="excel-import" accept=".xlsx,.xls,.csv" hidden /><button class="btn" data-action="download-template">下载模板</button><button class="btn soft" data-action="import-excel">导入 Excel</button>${helpPopover('excel-rule','Excel 第一行应包含“姓名、学号、性别”。姓名为必填；导入时会自动跳过同名学生。')}<button class="btn primary" data-action="add-student">＋ 添加学生</button></div></div><div class="card pad">${studentList()}</div>`,"students");
@@ -297,6 +302,7 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", e => {
   if(e.target.matches('#homework-date')){state.homeworkDate=e.target.value;state.homeworkDetailId=null;persist();render();return;}
+  if(e.target.matches('#attendance-date')){state.attendanceFocusDate=e.target.value;persist();render();return;}
   if(e.target.matches('#excel-import')){importStudentExcel(e.target.files?.[0]);return;}
   if(e.target.matches('[data-pick-student]')){const {taskId,day}=state.picker;const task=state.tasks.find(t=>t.id===taskId);let ids=[...getCell(state.draft,taskId,day)];if(e.target.checked){if(ids.length>=task.count){e.target.checked=false;toast(`该任务最多选择 ${task.count} 人`);return;}ids.push(e.target.dataset.pickStudent);}else ids=ids.filter(x=>x!==e.target.dataset.pickStudent);setCell(taskId,day,ids);render();}
 });
@@ -360,7 +366,7 @@ document.addEventListener("submit", async e => {
 function randomSchedule(){
   if(!state.students.length)return toast('请先添加学生');
   const counts=Object.fromEntries(state.students.map(s=>[s.id,0])); const next={};
-  state.tasks.forEach(task=>DAYS.forEach(day=>{const available=state.students.filter(s=>!isLeave(s.id,day)).sort((a,b)=>counts[a.id]-counts[b.id]||Math.random()-.5);const usedDay=new Set(state.tasks.flatMap(t=>next[`${t.id}:${day}`]||[]));const chosen=available.filter(s=>!usedDay.has(s.id)).slice(0,task.count).map(s=>s.id);chosen.forEach(id=>counts[id]++);next[`${task.id}:${day}`]=chosen;}));
+  state.tasks.forEach(task=>DAYS.forEach(day=>{const available=[...state.students].sort((a,b)=>counts[a.id]-counts[b.id]||Math.random()-.5);const usedDay=new Set(state.tasks.flatMap(t=>next[`${t.id}:${day}`]||[]));const chosen=available.filter(s=>!usedDay.has(s.id)).slice(0,task.count).map(s=>s.id);chosen.forEach(id=>counts[id]++);next[`${task.id}:${day}`]=chosen;}));
   state.draft=next;state.draftDirty=true;persist();render();toast('已重新生成随机排班');
 }
 async function importStudentExcel(file){
@@ -387,7 +393,9 @@ function downloadStudentTemplate(){
   const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));link.download='学生名单导入模板.csv';link.click();URL.revokeObjectURL(link.href);
 }
 function startRollCall(){
-  if(rollCallTimer || !state.students.length) return;
+  const candidates=state.students.filter(student=>!isLeaveOnDate(student.id,localDateValue()));
+  if(rollCallTimer) return;
+  if(!candidates.length){toast('今天可点名的学生为空');return;}
   const name=document.querySelector('#rollcall-name');
   const eyebrow=document.querySelector('#rollcall-eyebrow');
   const button=document.querySelector('#rollcall-draw');
@@ -396,11 +404,11 @@ function startRollCall(){
   name.classList.remove('placeholder');eyebrow.textContent='随机抽取中';
   let ticks=0;
   rollCallTimer=setInterval(()=>{
-    name.textContent=state.students[Math.floor(Math.random()*state.students.length)].name;
+    name.textContent=candidates[Math.floor(Math.random()*candidates.length)].name;
     if(++ticks>=14){
       clearInterval(rollCallTimer);rollCallTimer=null;
       const values=new Uint32Array(1);crypto.getRandomValues(values);
-      name.textContent=state.students[values[0]%state.students.length].name;
+      name.textContent=candidates[values[0]%candidates.length].name;
       eyebrow.textContent='本次点到';button.textContent='再点一名';button.classList.remove('running');button.disabled=false;
     }
   },75);
