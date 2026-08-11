@@ -12,6 +12,8 @@ const initial = {
 let saved;
 try { saved = JSON.parse(localStorage.getItem("qinghe-class-manager") || "null"); } catch { saved = null; }
 let state = { ...initial, ...(saved || {}) };
+let serverReady = false;
+let saveTimer = null;
 if (new URLSearchParams(window.location.search).get("logout") === "1") {
   state.loggedIn = false;
   state.view = "login";
@@ -23,6 +25,35 @@ let rollCallTimer = null;
 function persist() {
   const { picker, modal, popover, ...data } = state;
   localStorage.setItem("qinghe-class-manager", JSON.stringify(data));
+  if (serverReady && state.loggedIn) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => apiFetch("/api/state", { method: "PUT", body: JSON.stringify({ state: data }) }).catch(() => toast("数据暂未同步，请检查服务器连接")), 250);
+  }
+}
+async function apiFetch(url, options = {}) {
+  const response = await fetch(url, { credentials: "same-origin", headers: { "content-type": "application/json", ...(options.headers || {}) }, ...options });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+async function loadRemoteState() {
+  const result = await apiFetch("/api/state");
+  const remote = result.state && Object.keys(result.state).length ? result.state : null;
+  state = { ...initial, ...(remote || {}), loggedIn: true, view: remote?.view === "login" ? "home" : (remote?.view || "setup") };
+  if (!state.tasks?.length) state.tasks = DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() }));
+}
+async function bootstrap() {
+  try {
+    const auth = await apiFetch("/api/auth/me");
+    serverReady = true;
+    if (auth.authenticated) await loadRemoteState();
+    else state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
+  } catch {
+    serverReady = false;
+    state.loggedIn = false;
+    state.view = "login";
+  }
+  render();
 }
 function toast(message) {
   const el = document.querySelector("#toast"); el.textContent = message; el.classList.add("show");
@@ -122,7 +153,7 @@ function render() {
   else if (state.view==='display-rollcall') app.innerHTML=displayRollCallPage();
   else app.innerHTML=dashboard();
 }
-document.addEventListener("click", e => {
+document.addEventListener("click", async e => {
   const popoverButton=e.target.closest('[data-popover]');
   if(popoverButton){const id=popoverButton.dataset.popover;state.popover=state.popover===id?null:id;render();return;}
   const routeBtn=e.target.closest("[data-route]"); if(routeBtn){route(routeBtn.dataset.route);return;}
@@ -141,8 +172,12 @@ document.addEventListener("click", e => {
     if(input&&button){const visible=input.type==='text';input.type=visible?'password':'text';button.textContent=visible?'显示':'隐藏';button.setAttribute('aria-pressed',String(!visible));}
     return;
   }
-  if(action==='logout'){state.loggedIn=false;state.view='login';persist();render();return;}
-  if(action==='register'){state.loggedIn=true;state.accountPhone=document.querySelector('[name="phone"]')?.value || state.accountPhone;state.view='setup';state.setupStep=0;persist();render();}
+  if(action==='logout'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';localStorage.removeItem('qinghe-class-manager');render();return;}
+  if(action==='register'){
+    const phone=document.querySelector('[name="phone"]')?.value || '';
+    const password=document.querySelector('[name="password"]')?.value || '';
+    try{await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});state={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:0,tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};persist();render();toast('账号注册成功');}catch(error){toast(error.message);}return;
+  }
   if(action==='forgot') toast('演示版验证码：123456');
   if(action==='fill-demo'){state.students=DEFAULT_STUDENTS.map((name,i)=>({id:crypto.randomUUID(),name,number:`S${String(i+1).padStart(3,'0')}`,gender:i%2?'女':'男'}));persist();render();}
   if(action==='finish-setup'){state.view='home';persist();render();toast('首次设置完成');}
@@ -180,9 +215,11 @@ document.addEventListener("change", e => {
   if(e.target.matches('#excel-import')){importStudentExcel(e.target.files?.[0]);return;}
   if(e.target.matches('[data-pick-student]')){const {taskId,day}=state.picker;const task=state.tasks.find(t=>t.id===taskId);let ids=[...getCell(state.draft,taskId,day)];if(e.target.checked){if(ids.length>=task.count){e.target.checked=false;toast(`该任务最多选择 ${task.count} 人`);return;}ids.push(e.target.dataset.pickStudent);}else ids=ids.filter(x=>x!==e.target.dataset.pickStudent);setCell(taskId,day,ids);render();}
 });
-document.addEventListener("submit", e => {
+document.addEventListener("submit", async e => {
   e.preventDefault(); const f=new FormData(e.target);
-  if(e.target.id==='login-form'){state.loggedIn=true;state.accountPhone=String(f.get('phone') || '');if(!state.profile){state.view='setup';state.setupStep=0;}else state.view='home';persist();render();}
+  if(e.target.id==='login-form'){
+    try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.profile){state.view='setup';state.setupStep=0;}else state.view='home';persist();render();}catch(error){toast(error.message);}return;
+  }
   if(e.target.id==='profile-form'){if(f.get('pin')!==f.get('pin2'))return toast('两次管理密码不一致');state.profile={name:f.get('name'),school:f.get('school'),pin:f.get('pin')};state.setupStep=1;persist();render();}
   if(e.target.id==='class-form'){const cn=['一','二','三','四','五','六'][Number(f.get('grade'))-1];state.classInfo={name:`${cn}年级（${f.get('number')}）班`,grade:Number(f.get('grade')),number:Number(f.get('number')),year:f.get('year'),term:f.get('term')};state.setupStep=2;persist();render();}
   if(e.target.id==='quick-student'){state.students.push({id:crypto.randomUUID(),name:f.get('name'),number:f.get('number'),gender:f.get('gender')});state.modal=null;persist();render();}
@@ -207,9 +244,7 @@ document.addEventListener("submit", e => {
   }
   if(e.target.id==='delete-account-form'){
     if(String(f.get('confirmation') || '').trim()!=='注销账号') return toast('请输入“注销账号”后再确认');
-    localStorage.removeItem('qinghe-class-manager');
-    state={...initial,tasks:DEFAULT_TASKS.map(t=>({...t,id:crypto.randomUUID()}))};
-    render();toast('演示账号已注销');
+    try{await apiFetch('/api/account',{method:'DELETE',body:JSON.stringify({confirmation:'注销账号'})});localStorage.removeItem('qinghe-class-manager');state={...initial,tasks:DEFAULT_TASKS.map(t=>({...t,id:crypto.randomUUID()}))};render();toast('账号已注销');}catch(error){toast(error.message);}
   }
 });
 function randomSchedule(){
@@ -266,4 +301,4 @@ function exportExcel(){
   const html=`<html><meta charset="UTF-8"><body><h2>${esc(currentClass())} 每周值日表</h2><table border="1"><tr><th>任务</th>${DAYS.map(d=>`<th>${d}</th>`).join('')}</tr>${rows}</table></body></html>`;
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'application/vnd.ms-excel'}));a.download=`${currentClass()}_每周值日表.xls`;a.click();URL.revokeObjectURL(a.href);toast('Excel 已导出');
 }
-render();
+bootstrap();

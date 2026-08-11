@@ -1,0 +1,12 @@
+services:
+  class-manager:
+    build: .
+    container_name: class-manager
+    restart: unless-stopped
+    ports:
+      - "4174:4174"
+    volumes:
+      - ./data:/app/data
+    environment:
+      NODE_ENV: production
+      PORT: 4174

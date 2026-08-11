@@ -1,100 +1,50 @@
-# vinext-starter
+# 班务通｜班级管理系统
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+面向班主任的电脑端班级管理系统。当前版本已从纯前端原型升级为可持久化运行的前后端项目。
 
-## Prerequisites
+## 技术结构
 
-- Node.js `>=22.13.0`
+- 前端：原生 HTML、CSS、JavaScript，适合教师电脑与教室大屏
+- 后端：Node.js 原生 HTTP 服务
+- 数据库：SQLite（单文件存储，启用 WAL）
+- 登录：手机号和密码；密码使用 scrypt 加盐哈希
+- 会话：HttpOnly、SameSite Cookie
+- Excel：组件随项目安装，不依赖境外 CDN
 
-## Quick Start
+SQLite 不依赖外部数据库服务，适合学校内网、国内云服务器或单机部署。后续数据规模扩大时，可以再迁移到 MySQL/PostgreSQL。
+
+## 本地运行
+
+需要 Node.js 22.13 或更高版本。
 
 ```bash
 npm install
-npm run dev
-npm run build
+npm run server
 ```
 
-This starter does not use `wrangler.jsonc`.
+浏览器访问 `http://localhost:4174`。首次使用时，在登录页填写手机号和至少 6 位密码，然后点击“立即注册”。
 
-## Included Shape
+## Docker 部署
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+docker compose up -d --build
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+数据库保存在项目的 `data/class-manager.sqlite`。备份时复制该文件即可；服务运行中备份时，应同时保留同目录下可能出现的 `-wal` 和 `-shm` 文件，或先停止服务。
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## 现有后端接口
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+- `GET /api/health`：健康检查
+- `POST /api/auth/register`：教师注册
+- `POST /api/auth/login`：教师登录
+- `POST /api/auth/logout`：退出登录
+- `GET /api/auth/me`：查询会话
+- `GET /api/state`：读取当前教师的班级数据
+- `PUT /api/state`：保存当前教师的班级数据
+- `DELETE /api/account`：注销教师账号并删除关联数据
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+## 国内部署建议
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- 校内使用：部署在学校局域网中的一台常开电脑或服务器。
+- 互联网使用：部署在阿里云、腾讯云、华为云等中国大陆服务器；对公网提供服务时需按实际域名和地区完成备案及 HTTPS 配置。
+- 生产环境建议在应用前放置 Nginx，并启用 HTTPS、访问日志和每日数据库备份。
