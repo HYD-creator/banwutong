@@ -161,9 +161,14 @@ tr:last-child td { border-bottom: 0; }
 .display-homework-title { display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px 14px; padding-bottom:16px; border-bottom:1px solid var(--line); }
 .display-homework-title .eyebrow { grid-column:1; }
 .display-homework-title h2 { grid-column:1; }
-.display-homework-title .pill { grid-column:2; grid-row:1 / span 2; }
+.display-homework-counts { grid-column:2; grid-row:1 / span 2; display:flex; gap:8px; }
+.student-status-group { padding-top:16px; }
+.student-status-group > strong { display:block; color:#7b8495; font-size:12px; }
 .missing-students { display:flex; flex-wrap:wrap; gap:10px; padding-top:18px; }
 .missing-students span { padding:8px 12px; border-radius:9px; background:#fff4e5; color:#a75c00; font-weight:750; }
+.leave-group { margin-top:16px; border-top:1px dashed var(--line); }
+.leave-students { display:flex; flex-wrap:wrap; gap:10px; padding-top:12px; }
+.leave-students span { padding:8px 12px; border-radius:9px; background:#f1f3f7; color:#687386; font-weight:750; }
 .all-submitted { margin-top:18px; padding:20px; border-radius:10px; background:#e9f8f2; color:var(--green); text-align:center; font-weight:750; }
 .homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
 .homework-date-bar .input { width:220px; }
