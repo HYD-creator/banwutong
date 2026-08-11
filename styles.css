@@ -20,7 +20,8 @@ button { cursor: pointer; }
 .app-shell { min-height: 100vh; }
 .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 19px; }
-.brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #2f6fe4, #63a1ff); box-shadow: 0 7px 16px rgba(47,111,228,.24); }
+.brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: transparent; font-size:0; background: linear-gradient(135deg, #2f6fe4, #63a1ff); box-shadow: 0 7px 16px rgba(47,111,228,.24); }
+.brand-mark:before { content:"✓"; color:#fff; font-size:22px; font-weight:900; transform:rotate(-7deg); }
 .top-actions, .row { display: flex; align-items: center; gap: 10px; }
 .user-chip { padding: 7px 11px 7px 8px; border:0; border-radius: 999px; background: #f3f6fb; display: flex; gap: 8px; align-items: center; color:var(--ink); font-size: 14px; cursor:pointer; }
 .user-chip:hover { background:#eaf1ff; }
@@ -31,6 +32,14 @@ button { cursor: pointer; }
 .sidebar-account > span:last-child { min-width:0; display:grid; gap:3px; }
 .sidebar-account strong,.sidebar-account small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-account small { color:var(--muted); }
+.nav-btn[data-route="students"] > span:first-child { font-size:0; }
+.nav-btn[data-route="students"] > span:first-child:before { content:"♟♟"; font-size:11px; letter-spacing:-4px; }
+.action-card[data-route="students"] .action-icon { font-size:0; }
+.action-card[data-route="students"] .action-icon:before { content:"♟♟"; font-size:14px; letter-spacing:-5px; }
+.nav-btn[data-route="profile"] > span:first-child { font-size:0; }
+.nav-btn[data-route="profile"] > span:first-child:before { content:"♙"; font-size:18px; }
+.btn[data-action="manual"] { display:none; }
+.app-shell:has(.nav-btn[data-route="class"].active) .danger-zone { display:none; }
 .nav-label { color: #9aa3b3; font-size: 12px; margin: 0 12px 10px; }
 .nav-btn { position:relative; width: 100%; min-height:48px; border: 0; background: transparent; color: #566074; text-align: left; padding: 13px 14px; border-radius: 10px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; cursor:pointer; touch-action:manipulation; user-select:none; }
 .nav-btn > * { pointer-events:none; }
