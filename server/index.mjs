@@ -108,6 +108,14 @@ async function api(req, res, url) {
     db.prepare(`INSERT INTO teacher_states (teacher_id, state_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(teacher_id) DO UPDATE SET state_json = excluded.state_json, updated_at = CURRENT_TIMESTAMP`).run(user.id, value);
     return json(res, 200, { ok: true });
   }
+  if (req.method === "PUT" && url.pathname === "/api/account/password") {
+    const user = requireUser(req, res); if (!user) return;
+    const { password = "" } = await readJson(req);
+    if (String(password).length < 6) return json(res, 400, { error: "密码至少需要6位" });
+    const { salt, hash } = hashPassword(String(password));
+    db.prepare("UPDATE teachers SET password_hash = ?, password_salt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(hash, salt, user.id);
+    return json(res, 200, { ok: true });
+  }
   if (req.method === "DELETE" && url.pathname === "/api/account") {
     const user = requireUser(req, res); if (!user) return;
     const { confirmation } = await readJson(req);

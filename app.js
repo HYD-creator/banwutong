@@ -46,7 +46,8 @@ async function bootstrap() {
   try {
     const auth = await apiFetch("/api/auth/me");
     serverReady = true;
-    if (window.location.pathname === "/login") state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
+    if (window.location.pathname === "/register") state = { ...initial, view: "register", tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
+    else if (window.location.pathname === "/login") state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
     else if (auth.authenticated) await loadRemoteState();
     else state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
   } catch {
@@ -68,7 +69,7 @@ function greeting() {
 }
 function classCreationForm() {
   const c = state.classInfo || {};
-  return `<form id="class-form"><h1>创建班级</h1><p class="sub">当前账号同时只管理一个班级。</p><div class="grid two"><div class="field"><label>年级 *</label><select class="select" name="grade">${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n===Number(c.grade||3)?'selected':''}>${["一","二","三","四","五","六"][n-1]}年级</option>`).join("")}</select></div><div class="field"><label>班号 *</label><input class="input" name="number" type="number" min="1" value="${esc(c.number||2)}" required /></div></div><div class="grid two"><div class="field"><label>学年 *</label><input class="input" name="year" value="${esc(c.year||'2026—2027')}" required /></div><div class="field"><label>学期 *</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="setup-back-profile">上一步：个人信息</button><button class="btn primary">下一步：添加学生</button></div></form>`;
+  return `<form id="class-form"><h1>创建班级</h1><p class="sub">当前账号同时只管理一个班级。</p><div class="grid two"><div class="field"><label>年级 *</label><select class="select" name="grade">${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n===Number(c.grade||3)?'selected':''}>${["一","二","三","四","五","六"][n-1]}年级</option>`).join("")}</select></div><div class="field"><label>班号 *</label><input class="input" name="number" type="number" min="1" value="${esc(c.number||2)}" required /></div></div><div class="grid two"><div class="field"><label>学年 *</label><input class="input" name="year" value="${esc(c.year||'2026—2027')}" required /></div><div class="field"><label>学期 *</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="setup-back-login">返回登录</button><button class="btn primary">下一步：添加学生</button></div></form>`;
 }
 function getCell(schedule, taskId, day) { return schedule[`${taskId}:${day}`] || []; }
 function setCell(taskId, day, ids) { state.draft[`${taskId}:${day}`] = ids; state.draftDirty = true; persist(); }
@@ -78,14 +79,16 @@ function isLate(studentId, day) { return !!state.lates?.[`${studentId}:${day}`];
 function loginPage() {
   return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" value="13800000000" maxlength="11" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" value="123456" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:space-between;margin-top:12px"><label class="sub"><input type="checkbox" /> 记住账号</label><button type="button" class="btn small soft" data-action="forgot">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <button type="button" class="btn small" data-action="register">立即注册</button></p></form></section></div>`;
 }
+function registerPage() {
+  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>创建教师账号，开始管理班级。</h1><p>登录密码同时用于从教室展示模式返回教师管理模式，请妥善保管。</p></div><p>一个账号 · 一个班级 · 两种使用模式</p></section><section class="auth-panel"><form class="form-card" id="register-form"><span class="eyebrow">新用户注册</span><h1>创建教师账号</h1><p class="sub">注册成功后，请返回登录页使用新账号登录。</p><div class="grid two"><div class="field"><label>教师姓名 *</label><input class="input" name="name" placeholder="例如：王老师" required /></div><div class="field"><label>学校名称 *</label><input class="input" name="school" placeholder="例如：实验小学" required /></div></div><div class="field"><label>手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" placeholder="请输入11位手机号" required /></div><div class="field"><label for="register-password">登录密码 *</label><div class="password-field"><input class="input" id="register-password" name="password" type="password" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="register-password2">确认密码 *</label><div class="password-field"><input class="input" id="register-password2" name="password2" type="password" minlength="6" placeholder="再次输入登录密码" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password2" aria-pressed="false">显示</button></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="register-back-login">返回登录</button><button class="btn primary">注册账号</button></div></form></section></div>`;
+}
 function setupPage() {
   const step = state.setupStep;
-  const steps = ["完善个人信息","创建班级","添加学生"];
+  const steps = ["创建班级","添加学生"];
   let body = "";
-  if (step === 0) body = `<form id="profile-form"><h1>完善个人信息</h1><p class="sub">这些信息会显示在教师管理首页。</p><div class="grid two"><div class="field"><label>教师姓名 *</label><input class="input" name="name" value="${esc(state.profile?.name || "王老师")}" required /></div><div class="field"><label>学校名称 *</label><input class="input" name="school" value="${esc(state.profile?.school || "实验小学")}" required /></div></div><div class="grid two"><div class="field"><label for="setup-pin">管理密码 *</label><div class="password-field"><input class="input" id="setup-pin" name="pin" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin" aria-pressed="false">显示</button></div></div><div class="field"><label for="setup-pin2">确认管理密码 *</label><div class="password-field"><input class="input" id="setup-pin2" name="pin2" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin2" aria-pressed="false">显示</button></div></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="setup-back-login">返回登录</button><button class="btn primary">保存并继续</button></div></form>`;
   if (step === 1) body = classCreationForm();
   if (step === 2) body = `<div><h1>添加学生</h1><p class="sub">支持手动添加或从 Excel 批量导入，表头使用“姓名、学号、性别”。</p><div class="import-bar"><input type="file" id="excel-import" accept=".xlsx,.xls,.csv" hidden /><button class="btn soft" data-action="import-excel">导入 Excel</button><button class="btn small" data-action="download-template">下载导入模板</button></div><form class="row" id="quick-student" style="margin-top:20px"><input class="input" name="name" placeholder="学生姓名" required /><input class="input" name="number" placeholder="学号（选填）" /><select class="select" name="gender" style="max-width:110px"><option>男</option><option>女</option></select><button class="btn primary">添加</button></form>${studentList()}<div class="form-actions" style="justify-content:space-between"><button class="btn" data-action="setup-back-class">上一步：创建班级</button><div class="row"><button class="btn" data-action="fill-demo">填入示例名单</button><button class="btn primary" data-action="finish-setup" ${state.students.length?'':'disabled'}>完成设置</button></div></div></div>`;
-  return `<div class="setup-page"><div class="card setup-card"><div class="steps">${steps.map((x,i)=>`<div class="step ${i===step?'active':i<step?'done':''}">${i+1}. ${x}</div>`).join("")}</div>${body}</div></div>`;
+  return `<div class="setup-page"><div class="card setup-card"><div class="steps">${steps.map((x,i)=>`<div class="step ${i===step-1?'active':i<step-1?'done':''}">${i+1}. ${x}</div>`).join("")}</div>${body}</div></div>`;
 }
 function studentList() {
   if (!state.students.length) return `<div class="student-list empty">还没有学生，请先添加一名学生。</div>`;
@@ -141,14 +144,15 @@ function modal() {
   if (!state.modal) return "";
   if (state.modal.type==='task') { const t=state.tasks.find(x=>x.id===state.modal.id); return `<div class="modal-backdrop"><form class="modal" id="task-form"><div class="modal-head"><h2>${t?'编辑':'新增'}值日任务</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>任务名称 *</label><input class="input" name="name" maxlength="15" value="${esc(t?.name||'')}" required /></div><div class="field"><label>每天需要人数 *</label><input class="input" name="count" type="number" min="1" max="8" value="${t?.count||2}" required /></div><div class="form-actions" style="justify-content:${t?'space-between':'flex-end'}">${t?`<button type="button" class="btn danger" data-delete-task="${t.id}">删除任务</button>`:''}<div class="row"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">保存任务</button></div></div></form></div>`; }
   if (state.modal.type==='student') { const s=state.students.find(x=>x.id===state.modal.id); return `<div class="modal-backdrop"><form class="modal" id="student-form"><div class="modal-head"><h2>${s?'修改':'添加'}学生信息</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>学生姓名 *</label><input class="input" name="name" value="${esc(s?.name||'')}" required /></div><div class="field"><label>学号</label><input class="input" name="number" value="${esc(s?.number||'')}" /></div><div class="field"><label>性别</label><select class="select" name="gender"><option ${s?.gender==='男'?'selected':''}>男</option><option ${s?.gender==='女'?'selected':''}>女</option><option ${s?.gender==='未填写'?'selected':''}>未填写</option></select></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">${s?'保存修改':'添加'}</button></div></form></div>`; }
-  if (state.modal.type==='pin') return `<div class="modal-backdrop"><form class="modal" id="pin-form"><div class="modal-head"><h2>返回教师管理模式</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">请输入管理密码，防止学生进入管理功能。</p><div class="field"><label for="manage-pin">管理密码</label><div class="password-field"><input class="input" id="manage-pin" type="password" name="pin" required autofocus /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="manage-pin" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button type="button" class="btn small soft" data-action="forgot-pin">忘记管理密码？</button></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认返回</button></div></form></div>`;
+  if (state.modal.type==='pin') return `<div class="modal-backdrop"><form class="modal" id="pin-form"><div class="modal-head"><h2>返回教师管理模式</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">请输入教师账号的登录密码，防止学生进入管理功能。</p><div class="field"><label for="manage-pin">登录密码</label><div class="password-field"><input class="input" id="manage-pin" type="password" name="pin" required autofocus /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="manage-pin" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button type="button" class="btn small soft" data-action="forgot-pin">忘记登录密码？</button></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认返回</button></div></form></div>`;
   if (state.modal.type==='reset-pin') return `<div class="modal-backdrop"><form class="modal" id="reset-pin-form"><div class="modal-head"><h2>重设管理密码</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">验证账号绑定手机号后，即可设置新的管理密码。演示验证码为 <b>123456</b>。</p><div class="field"><label>绑定手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" value="${esc(state.accountPhone || '')}" placeholder="请输入11位手机号" required /></div><div class="field"><label>短信验证码 *</label><div class="row"><input class="input" name="code" inputmode="numeric" maxlength="6" placeholder="请输入6位验证码" required /><button type="button" class="btn soft" data-action="send-pin-code">获取验证码</button></div></div><div class="grid two"><div class="field"><label for="reset-pin">新管理密码 *</label><div class="password-field"><input class="input" id="reset-pin" type="password" name="pin" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="reset-pin" aria-pressed="false">显示</button></div></div><div class="field"><label for="reset-pin2">确认新密码 *</label><div class="password-field"><input class="input" id="reset-pin2" type="password" name="pin2" minlength="6" placeholder="再次输入" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="reset-pin2" aria-pressed="false">显示</button></div></div></div><div class="form-actions"><button type="button" class="btn" data-action="back-pin">返回</button><button class="btn primary">确认重设</button></div></form></div>`;
   if (state.modal.type==='delete-account') return `<div class="modal-backdrop"><form class="modal" id="delete-account-form"><div class="modal-head"><h2>确认注销账号</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="delete-warning"><strong>此操作无法撤销</strong><p>账号、班级、学生、排班、考勤及其他历史记录都会被删除。</p></div><div class="field"><label>请输入“注销账号”进行确认</label><input class="input" name="confirmation" autocomplete="off" required /></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn danger">永久注销账号</button></div></form></div>`;
   if (state.modal.type==='duty-preview') return `<div class="modal-backdrop"><section class="modal preview-modal"><div class="modal-head"><div><span class="eyebrow">教室展示效果</span><h2>${esc(currentClass())} · 每周值日表</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="table-wrap"><table><thead><tr><th>值日任务</th>${DAYS.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td><strong>${esc(t.name)}</strong><div class="sub">${t.count} 人</div></td>${DAYS.map(d=>`<td>${getCell(state.draft,t.id,d).map(id=>esc(state.students.find(s=>s.id===id)?.name||'')).filter(Boolean).join('、')||'<span class="sub">待安排</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div class="preview-foot"><span class="sub">此处仅预览当前草稿，不会切换模式，也不会自动发布。</span><button class="btn primary" data-action="close-modal">关闭预览</button></div></section></div>`;
   return "";
 }
 function render() {
-  if (!state.loggedIn || state.view==='login') app.innerHTML=loginPage();
+  if (state.view==='register') app.innerHTML=registerPage();
+  else if (!state.loggedIn || state.view==='login') app.innerHTML=loginPage();
   else if (!state.profile || !state.classInfo || !state.students.length || state.view==='setup') app.innerHTML=setupPage();
   else if (state.view==='home') app.innerHTML=dashboard();
   else if (state.view==='rollcall') app.innerHTML=rollCallPage();
@@ -182,18 +186,16 @@ document.addEventListener("click", async e => {
   }
   if(action==='logout'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';localStorage.removeItem('qinghe-class-manager');window.history.replaceState({},'', '/login');render();return;}
   if(action==='setup-back-login'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';window.history.replaceState({},'', '/login');render();return;}
-  if(action==='setup-back-profile'){state.setupStep=0;persist();render();return;}
   if(action==='setup-back-class'){state.setupStep=1;persist();render();return;}
   if(action==='register'){
-    const phone=document.querySelector('[name="phone"]')?.value || '';
-    const password=document.querySelector('[name="password"]')?.value || '';
-    try{await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});state={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:0,tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/');persist();render();toast('账号注册成功');}catch(error){toast(error.message);}return;
+    state={...initial,view:'register',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.pushState({},'', '/register');render();return;
   }
+  if(action==='register-back-login'){state={...initial,view:'login',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();return;}
   if(action==='forgot') toast('演示版验证码：123456');
   if(action==='fill-demo'){state.students=DEFAULT_STUDENTS.map((name,i)=>({id:crypto.randomUUID(),name,number:`S${String(i+1).padStart(3,'0')}`,gender:i%2?'女':'男'}));persist();render();}
   if(action==='finish-setup'){state.view='home';persist();render();toast('首次设置完成');}
   if(action==='coming') toast('该功能将在下一阶段开放');
-  if(action==='display'){state.view='display';persist();render();}
+  if(action==='display' && confirm('即将进入教室展示模式。返回教师管理模式时，需要输入与教师账号相同的登录密码。是否继续？')){state.view='display';persist();render();}
   if(action==='display-rollcall'){state.view='display-rollcall';persist();render();}
   if(action==='display-duty'){state.view='display-duty';persist();render();}
   if(action==='back-display'){state.view='display';persist();render();}
@@ -229,7 +231,22 @@ document.addEventListener("change", e => {
 document.addEventListener("submit", async e => {
   e.preventDefault(); const f=new FormData(e.target);
   if(e.target.id==='login-form'){
-    try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.profile){state.view='setup';state.setupStep=0;}else state.view='home';window.history.replaceState({},'', '/');persist();render();}catch(error){toast(error.message);}return;
+    try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.classInfo){state.view='setup';state.setupStep=1;}else state.view='home';window.history.replaceState({},'', '/');persist();render();}catch(error){toast(error.message);}return;
+  }
+  if(e.target.id==='register-form'){
+    const phone=String(f.get('phone')||'').trim();
+    const password=String(f.get('password')||'');
+    const password2=String(f.get('password2')||'');
+    if(!/^1\d{10}$/.test(phone)) return toast('请输入正确的11位手机号');
+    if(password.length<6) return toast('密码至少需要6位');
+    if(password!==password2) return toast('两次输入的密码不一致');
+    try{
+      await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});
+      const registeredState={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:1,profile:{name:String(f.get('name')||'').trim(),school:String(f.get('school')||'').trim(),pin:password},tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};
+      await apiFetch('/api/state',{method:'PUT',body:JSON.stringify({state:registeredState})});
+      await apiFetch('/api/auth/logout',{method:'POST'});
+      state={...initial,view:'login',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();toast('注册成功，请使用新账号登录');
+    }catch(error){toast(error.message);}return;
   }
   if(e.target.id==='profile-form'){if(f.get('pin')!==f.get('pin2'))return toast('两次管理密码不一致');state.profile={name:f.get('name'),school:f.get('school'),pin:f.get('pin')};state.setupStep=1;persist();render();}
   if(e.target.id==='class-form'){const cn=['一','二','三','四','五','六'][Number(f.get('grade'))-1];state.classInfo={name:`${cn}年级（${f.get('number')}）班`,grade:Number(f.get('grade')),number:Number(f.get('number')),year:f.get('year'),term:f.get('term')};state.setupStep=2;persist();render();}
@@ -237,7 +254,7 @@ document.addEventListener("submit", async e => {
   if(e.target.id==='student-form'){const id=state.modal?.id;const data={id:id||crypto.randomUUID(),name:String(f.get('name')||'').trim(),number:String(f.get('number')||'').trim(),gender:f.get('gender')};if(id)state.students=state.students.map(s=>s.id===id?data:s);else state.students.push(data);state.modal=null;persist();render();toast(id?'学生信息已更新':'学生已添加');}
   if(e.target.id==='task-form'){const id=state.modal.id;const data={id:id||crypto.randomUUID(),name:f.get('name'),count:Number(f.get('count'))};if(id)state.tasks=state.tasks.map(t=>t.id===id?data:t);else state.tasks.push(data);state.modal=null;state.draftDirty=true;persist();render();}
   if(e.target.id==='edit-class'){state.classInfo={...state.classInfo,name:f.get('name'),year:f.get('year'),term:f.get('term')};persist();render();toast('班级信息已保存');}
-  if(e.target.id==='pin-form'){if(f.get('pin')!==state.profile.pin)return toast('管理密码错误');state.modal=null;state.view='home';persist();render();}
+  if(e.target.id==='pin-form'){if(f.get('pin')!==state.profile.pin)return toast('登录密码错误');state.modal=null;state.view='home';persist();render();}
   if(e.target.id==='reset-pin-form'){
     const phone=String(f.get('phone') || '').trim();
     const code=String(f.get('code') || '').trim();
@@ -248,6 +265,7 @@ document.addEventListener("submit", async e => {
     if(code!=='123456') return toast('验证码错误');
     if(pin.length<6) return toast('管理密码至少需要6位');
     if(pin!==pin2) return toast('两次输入的新密码不一致');
+    try{await apiFetch('/api/account/password',{method:'PUT',body:JSON.stringify({password:pin})});}catch(error){return toast(error.message);}
     state.accountPhone=phone;
     state.profile={...(state.profile || {}),pin};
     state.modal={type:'pin'};
