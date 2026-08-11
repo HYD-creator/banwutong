@@ -22,10 +22,15 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 19px; }
 .brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #2f6fe4, #63a1ff); box-shadow: 0 7px 16px rgba(47,111,228,.24); }
 .top-actions, .row { display: flex; align-items: center; gap: 10px; }
-.user-chip { padding: 7px 11px 7px 8px; border-radius: 999px; background: #f3f6fb; display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.user-chip { padding: 7px 11px 7px 8px; border:0; border-radius: 999px; background: #f3f6fb; display: flex; gap: 8px; align-items: center; color:var(--ink); font-size: 14px; cursor:pointer; }
+.user-chip:hover { background:#eaf1ff; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #dfeaff; color: var(--blue); font-weight: 800; }
 .layout { display: grid; grid-template-columns: 220px minmax(0,1fr); min-height: calc(100vh - 68px); }
 .sidebar { position:relative; z-index:18; padding: 24px 16px; background: #fff; border-right: 1px solid var(--line); }
+.sidebar-account { position:absolute; left:12px; right:12px; bottom:18px; display:flex; align-items:center; gap:9px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#f8faff; color:var(--ink); text-align:left; }
+.sidebar-account > span:last-child { min-width:0; display:grid; gap:3px; }
+.sidebar-account strong,.sidebar-account small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-account small { color:var(--muted); }
 .nav-label { color: #9aa3b3; font-size: 12px; margin: 0 12px 10px; }
 .nav-btn { position:relative; width: 100%; min-height:48px; border: 0; background: transparent; color: #566074; text-align: left; padding: 13px 14px; border-radius: 10px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; cursor:pointer; touch-action:manipulation; user-select:none; }
 .nav-btn > * { pointer-events:none; }

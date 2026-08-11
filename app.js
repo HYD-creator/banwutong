@@ -64,6 +64,17 @@ function toast(message) {
 function esc(s="") { return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function route(view) { state.view = view; state.picker = null; persist(); render(); }
 function currentClass() { return state.classInfo?.name || "尚未创建班级"; }
+function maskedPhone() {
+  const phone = String(state.accountPhone || "");
+  return /^1\d{10}$/.test(phone) ? `${phone.slice(0,3)}****${phone.slice(-4)}` : "教师账号";
+}
+function teacherName() {
+  const surname = String(state.profile?.surname || state.profile?.name || "").trim();
+  if (!surname) return maskedPhone();
+  if (surname.includes("****")) return surname;
+  return surname.endsWith("老师") ? surname : `${surname}老师`;
+}
+function teacherAvatar() { return String(state.profile?.surname || state.profile?.name || "师").trim()[0] || "师"; }
 function greeting() {
   return "您好";
 }
@@ -77,10 +88,10 @@ function isLeave(studentId, day) { return !!state.leaves[`${studentId}:${day}`];
 function isLate(studentId, day) { return !!state.lates?.[`${studentId}:${day}`]; }
 
 function loginPage() {
-  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" value="13800000000" maxlength="11" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" value="123456" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:space-between;margin-top:12px"><label class="sub"><input type="checkbox" /> 记住账号</label><button type="button" class="btn small soft" data-action="forgot">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <button type="button" class="btn small" data-action="register">立即注册</button></p></form></section></div>`;
+  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" value="13800000000" maxlength="11" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" value="123456" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button type="button" class="btn small soft" data-action="forgot">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <button type="button" class="btn small" data-action="register">立即注册</button></p></form></section></div>`;
 }
 function registerPage() {
-  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>创建教师账号，开始管理班级。</h1><p>登录密码同时用于从教室展示模式返回教师管理模式，请妥善保管。</p></div><p>一个账号 · 一个班级 · 两种使用模式</p></section><section class="auth-panel"><form class="form-card" id="register-form"><span class="eyebrow">新用户注册</span><h1>创建教师账号</h1><p class="sub">注册成功后，请返回登录页使用新账号登录。</p><div class="grid two"><div class="field"><label>教师姓名 *</label><input class="input" name="name" placeholder="例如：王老师" required /></div><div class="field"><label>学校名称 *</label><input class="input" name="school" placeholder="例如：实验小学" required /></div></div><div class="field"><label>手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" placeholder="请输入11位手机号" required /></div><div class="field"><label for="register-password">登录密码 *</label><div class="password-field"><input class="input" id="register-password" name="password" type="password" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="register-password2">确认密码 *</label><div class="password-field"><input class="input" id="register-password2" name="password2" type="password" minlength="6" placeholder="再次输入登录密码" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password2" aria-pressed="false">显示</button></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="register-back-login">返回登录</button><button class="btn primary">注册账号</button></div></form></section></div>`;
+  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>创建教师账号，开始管理班级。</h1><p>登录密码同时用于从教室展示模式返回教师管理模式，请妥善保管。</p></div><p>一个账号 · 一个班级 · 两种使用模式</p></section><section class="auth-panel"><form class="form-card" id="register-form"><span class="eyebrow">新用户注册</span><h1>创建教师账号</h1><p class="sub">注册成功后，请返回登录页使用新账号登录。</p><div class="field"><label>手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" placeholder="请输入11位手机号" required /></div><div class="field"><label for="register-password">登录密码 *</label><div class="password-field"><input class="input" id="register-password" name="password" type="password" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="register-password2">确认密码 *</label><div class="password-field"><input class="input" id="register-password2" name="password2" type="password" minlength="6" placeholder="再次输入登录密码" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password2" aria-pressed="false">显示</button></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="register-back-login">返回登录</button><button class="btn primary">注册账号</button></div></form></section></div>`;
 }
 function setupPage() {
   const step = state.setupStep;
@@ -98,8 +109,9 @@ function helpPopover(id,text) {
   return `<span class="popover-wrap ${state.popover===id?'open':''}"><button type="button" class="help-button" data-popover="${id}" aria-label="查看说明" aria-expanded="${state.popover===id}">?</button><span class="popover-card" role="tooltip">${esc(text)}</span></span>`;
 }
 function shell(content, active="home") {
-  const name = state.profile?.name || "王老师";
-  return `<div class="app-shell"><header class="topbar"><div class="brand"><span class="brand-mark">班</span>班务通</div><div class="top-actions"><span class="pill green">教师管理模式</span><button class="btn small" data-action="display">切换到教室展示模式</button><div class="user-chip"><span class="avatar">${esc(name[0])}</span>${esc(name)}</div><button class="btn small" data-action="logout">退出登录</button></div></header><div class="layout"><aside class="sidebar"><div class="nav-label">主要功能</div>${[["home","⌂","管理首页","查看班级概览和待处理事项"],["rollcall","◉","随机点名","从当前班级名单随机抽取学生"],["duty","▦","值日管理","编辑、预览并发布每周值日安排"],["attendance","✓","考勤请假","登记学生请假与迟到情况"],["students","♙","学生名单","添加、导入或修改学生信息"],["class","◇","班级设置","修改班级资料和账号相关设置"]].map(([v,ic,t,tip])=>`<button class="nav-btn ${active===v?'active':''}" data-route="${v}" data-tooltip="${tip}" aria-label="${t}：${tip}"><span>${ic}</span><span class="nav-text">${t}</span></button>`).join("")}</aside><main class="main">${content}</main></div>${modal()}</div>`;
+  const name = teacherName();
+  const school = String(state.profile?.school || "").trim();
+  return `<div class="app-shell"><header class="topbar"><div class="brand"><span class="brand-mark">班</span>班务通</div><div class="top-actions"><span class="pill green">教师管理模式</span><button class="btn small" data-action="display">切换到教室展示模式</button><button class="user-chip" data-route="profile" aria-label="打开个人信息"><span class="avatar">${esc(teacherAvatar())}</span>${esc(name)}</button><button class="btn small" data-action="logout">退出登录</button></div></header><div class="layout"><aside class="sidebar"><div class="nav-label">主要功能</div>${[["home","⌂","管理首页","查看班级概览和待处理事项"],["rollcall","◉","随机点名","从当前班级名单随机抽取学生"],["duty","▦","值日管理","编辑、预览并发布每周值日安排"],["attendance","✓","考勤请假","登记学生请假与迟到情况"],["students","♙","学生名单","添加、导入或修改学生信息"],["class","◇","班级设置","修改班级资料和账号相关设置"],["profile","♙","个人信息","填写教师姓氏和学校名称"]].map(([v,ic,t,tip])=>`<button class="nav-btn ${active===v?'active':''}" data-route="${v}" data-tooltip="${tip}" aria-label="${t}：${tip}"><span>${ic}</span><span class="nav-text">${t}</span></button>`).join("")}<button class="sidebar-account" data-route="profile"><span class="avatar">${esc(teacherAvatar())}</span><span><strong>${esc(name)}</strong>${school?`<small>${esc(school)}</small>`:''}</span></button></aside><main class="main">${content}</main></div>${modal()}</div>`;
 }
 function dashboard() {
   const leaveCount = Object.keys(state.leaves).length;
@@ -133,6 +145,11 @@ function classPage() {
   const c=state.classInfo||{};
   return shell(`<div class="hero"><div><span class="eyebrow">基础资料</span><h1>班级设置</h1><p class="sub">修改当前班级资料，或删除后重新创建班级。</p></div></div><div class="card pad"><form id="edit-class"><div class="grid two"><div class="field"><label>班级名称</label><input class="input" name="name" value="${esc(c.name||'')}" required /></div><div class="field"><label>学年</label><input class="input" name="year" value="${esc(c.year||'')}" required /></div><div class="field"><label>学期</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn danger" data-action="delete-class">删除当前班级</button><button class="btn primary">保存修改</button></div></form></div><section class="danger-zone"><div><h2>危险操作</h2><p class="sub">注销账号后，教师账号、班级资料、学生名单和历史记录将被删除，且无法恢复。</p></div><button class="btn danger" data-action="open-delete-account">注销账号</button></section>`,"class");
 }
+function profilePage() {
+  const surname = String(state.profile?.surname || "").trim();
+  const school = String(state.profile?.school || "").trim();
+  return shell(`<div class="hero"><div><span class="eyebrow">账号资料</span><h1>个人信息</h1><p class="sub">填写后将在管理首页、顶部账号区域和侧边栏显示。</p></div></div><div class="card pad"><form id="profile-info-form"><div class="grid two"><div class="field"><label>教师姓氏</label><input class="input" name="surname" maxlength="8" value="${esc(surname)}" placeholder="例如：王" /></div><div class="field"><label>学校名称</label><input class="input" name="school" maxlength="40" value="${esc(school)}" placeholder="例如：实验小学" /></div></div><p class="sub">教师姓氏填写“王”后，系统将显示为“王老师”。未填写时显示脱敏手机号，学校名称不显示。</p><div class="form-actions"><button class="btn primary">保存个人信息</button></div></form></div>`,"profile");
+}
 function displayPage() {
   return `<div class="display-page"><div class="display-shell"><div class="display-head"><div><div class="display-title">${esc(currentClass())}</div><div style="opacity:.8;margin-top:4px">教室展示模式</div></div><button class="btn" data-action="back-manage">返回教师管理模式</button></div><div class="display-home"><div class="display-welcome"><span class="eyebrow">班务通 · 课堂功能</span><h1>选择要使用的功能</h1><p class="sub">学生可在教室大屏使用课堂功能；管理设置仍受管理密码保护。</p></div><div class="display-entry-grid"><button class="display-entry rollcall-entry" data-action="display-rollcall"><span class="display-entry-icon">◉</span><span><strong>课堂随机点名</strong><small>从当前班级名单中随机抽取学生</small></span><b>进入 →</b></button><button class="display-entry duty-entry" data-action="display-duty"><span class="display-entry-icon">▦</span><span><strong>本周值日表</strong><small>查看教师已发布的固定周值日安排</small></span><b>进入 →</b></button></div></div></div>${modal()}</div>`;
 }
@@ -160,6 +177,7 @@ function render() {
   else if (state.view==='attendance') app.innerHTML=attendancePage();
   else if (state.view==='students') app.innerHTML=studentsPage();
   else if (state.view==='class') app.innerHTML=classPage();
+  else if (state.view==='profile') app.innerHTML=profilePage();
   else if (state.view==='display') app.innerHTML=displayPage();
   else if (state.view==='display-duty') app.innerHTML=displayDutyPage();
   else if (state.view==='display-rollcall') app.innerHTML=displayRollCallPage();
@@ -242,13 +260,19 @@ document.addEventListener("submit", async e => {
     if(password!==password2) return toast('两次输入的密码不一致');
     try{
       await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});
-      const registeredState={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:1,profile:{name:String(f.get('name')||'').trim(),school:String(f.get('school')||'').trim(),pin:password},tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};
+      const registeredState={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:1,profile:{name:`${phone.slice(0,3)}****${phone.slice(-4)}`,school:' ',pin:password},tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};
       await apiFetch('/api/state',{method:'PUT',body:JSON.stringify({state:registeredState})});
       await apiFetch('/api/auth/logout',{method:'POST'});
       state={...initial,view:'login',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();toast('注册成功，请使用新账号登录');
     }catch(error){toast(error.message);}return;
   }
   if(e.target.id==='profile-form'){if(f.get('pin')!==f.get('pin2'))return toast('两次管理密码不一致');state.profile={name:f.get('name'),school:f.get('school'),pin:f.get('pin')};state.setupStep=1;persist();render();}
+  if(e.target.id==='profile-info-form'){
+    const surname=String(f.get('surname')||'').trim();
+    const school=String(f.get('school')||'').trim();
+    state.profile={...(state.profile||{}),surname,name:surname?`${surname}老师`:maskedPhone(),school:school||' '};
+    persist();render();toast('个人信息已保存');return;
+  }
   if(e.target.id==='class-form'){const cn=['一','二','三','四','五','六'][Number(f.get('grade'))-1];state.classInfo={name:`${cn}年级（${f.get('number')}）班`,grade:Number(f.get('grade')),number:Number(f.get('number')),year:f.get('year'),term:f.get('term')};state.setupStep=2;persist();render();}
   if(e.target.id==='quick-student'){state.students.push({id:crypto.randomUUID(),name:f.get('name'),number:f.get('number'),gender:f.get('gender')});state.modal=null;persist();render();}
   if(e.target.id==='student-form'){const id=state.modal?.id;const data={id:id||crypto.randomUUID(),name:String(f.get('name')||'').trim(),number:String(f.get('number')||'').trim(),gender:f.get('gender')};if(id)state.students=state.students.map(s=>s.id===id?data:s);else state.students.push(data);state.modal=null;persist();render();toast(id?'学生信息已更新':'学生已添加');}
