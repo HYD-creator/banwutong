@@ -49,7 +49,7 @@ h2 { font-size: 20px; margin: 0; }
 h3 { font-size: 16px; margin: 0; }
 .sub { color: var(--muted); margin: 0; line-height: 1.7; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
-.btn { border: 1px solid var(--line); border-radius: 9px; padding: 10px 15px; background: #fff; color: #38445a; font-weight: 650; }
+.btn { display:inline-flex; align-items:center; justify-content:center; border: 1px solid var(--line); border-radius: 9px; padding: 10px 15px; background: #fff; color: #38445a; font-weight: 650; text-decoration:none; }
 .btn:hover { border-color: #bac8df; background: #fbfcff; }
 .btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
 .btn.primary:hover { background: var(--blue-dark); }
