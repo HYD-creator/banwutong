@@ -21,7 +21,7 @@ button { cursor: pointer; }
 .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 19px; }
 .brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; color: transparent; font-size:0; background: linear-gradient(135deg, #2f6fe4, #63a1ff); box-shadow: 0 7px 16px rgba(47,111,228,.24); }
-.brand-mark:before { content:"✓"; color:#fff; font-size:22px; font-weight:900; transform:rotate(-7deg); }
+.brand-mark:before { content:""; width:7px; height:7px; border-radius:2px; background:#fff; box-shadow:10px 0 0 rgba(255,255,255,.72),0 10px 0 rgba(255,255,255,.72),10px 10px 0 #fff; transform:translate(-5px,-5px); }
 .top-actions, .row { display: flex; align-items: center; gap: 10px; }
 .user-chip { padding: 7px 11px 7px 8px; border:0; border-radius: 999px; background: #f3f6fb; display: flex; gap: 8px; align-items: center; color:var(--ink); font-size: 14px; cursor:pointer; }
 .user-chip:hover { background:#eaf1ff; }
