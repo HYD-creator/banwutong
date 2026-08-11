@@ -33,6 +33,7 @@ button { cursor: pointer; }
 .btn[data-action="manual"] { display:none; }
 .app-shell:has(.nav-btn[data-route="class"].active) .danger-zone { display:none; }
 .nav-label { color: #9aa3b3; font-size: 12px; margin: 0 12px 10px; }
+.nav-label-secondary { margin-top:18px; }
 .nav-btn { position:relative; width: 100%; min-height:48px; border: 0; background: transparent; color: #566074; text-align: left; padding: 13px 14px; border-radius: 10px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; cursor:pointer; touch-action:manipulation; user-select:none; }
 .nav-btn > span:first-child { width:22px; height:22px; flex:0 0 22px; display:grid; place-items:center; line-height:1; text-align:center; }
 .nav-btn > * { pointer-events:none; }
@@ -58,6 +59,7 @@ h3 { font-size: 16px; margin: 0; }
 .btn:disabled { cursor: not-allowed; opacity: .45; }
 .grid { display: grid; gap: 18px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.grid.four { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .grid.five { grid-template-columns: repeat(5, minmax(0,1fr)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 4px 18px rgba(36,58,99,.04); }
 .card.pad { padding: 22px; }
@@ -148,6 +150,14 @@ tr:last-child td { border-bottom: 0; }
 .field-inline { display:flex; align-items:center; gap:10px; font-weight:700; }
 .field-inline .select { min-width:280px; }
 .status-switch { display:flex; flex-wrap:wrap; gap:7px; }
+.homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
+.homework-date-bar .input { width:220px; }
+.homework-list { display:grid; gap:12px; padding-top:18px; }
+.homework-item { width:100%; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:18px 20px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); text-align:left; transition:.16s ease; }
+.homework-item:hover { border-color:#b9cff6; background:#f8fbff; transform:translateY(-1px); }
+.homework-item > span:first-child { display:flex; align-items:center; gap:14px; min-width:0; }
+.homework-item strong { flex:0 0 auto; padding:5px 9px; border-radius:7px; background:var(--blue-soft); color:var(--blue); }
+.homework-item b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(23,32,51,.42); backdrop-filter: blur(3px); }
 .modal { width: min(520px,100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 30px 80px rgba(19,33,60,.25); }
 .preview-modal { width:min(1180px,96vw); }
