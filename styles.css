@@ -156,6 +156,15 @@ tr:last-child td { border-bottom: 0; }
 .linked-note { display:inline-block; margin-left:9px; padding:3px 7px; border-radius:999px; background:#fff0f0; color:var(--red); font-size:11px; font-weight:700; }
 .linked-status { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border-radius:9px; background:#fff0f0; color:var(--red); font-weight:750; }
 .linked-status small { color:#a35c5c; font-weight:500; }
+.display-homework-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.display-homework-card { padding:22px; }
+.display-homework-title { display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px 14px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+.display-homework-title .eyebrow { grid-column:1; }
+.display-homework-title h2 { grid-column:1; }
+.display-homework-title .pill { grid-column:2; grid-row:1 / span 2; }
+.missing-students { display:flex; flex-wrap:wrap; gap:10px; padding-top:18px; }
+.missing-students span { padding:8px 12px; border-radius:9px; background:#fff4e5; color:#a75c00; font-weight:750; }
+.all-submitted { margin-top:18px; padding:20px; border-radius:10px; background:#e9f8f2; color:var(--green); text-align:center; font-weight:750; }
 .homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
 .homework-date-bar .input { width:220px; }
 .homework-list { display:grid; gap:12px; padding-top:18px; }
