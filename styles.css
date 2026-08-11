@@ -28,6 +28,7 @@ button { cursor: pointer; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #dfeaff; color: var(--blue); font-weight: 800; }
 .layout { display: grid; grid-template-columns: 220px minmax(0,1fr); min-height: calc(100vh - 68px); }
 .sidebar { position:relative; z-index:18; padding: 24px 16px; background: #fff; border-right: 1px solid var(--line); }
+.layout:has(.core-section) .sidebar { padding-top: 295px; }
 .sidebar-account { position:absolute; left:12px; right:12px; bottom:18px; display:flex; align-items:center; gap:9px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#f8faff; color:var(--ink); text-align:left; }
 .sidebar-account > span:last-child { min-width:0; display:grid; gap:3px; }
 .sidebar-account strong,.sidebar-account small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -154,6 +155,8 @@ tr:last-child td { border-bottom: 0; }
 .notice-item { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:22px; }
 .notice-item p { margin:0 0 12px; font-size:16px; line-height:1.8; white-space:pre-wrap; }
 .notice-item small { color:var(--muted); }
+.announcement-popup { border-top:5px solid var(--blue); }
+.announcement-popup > p { margin:12px 0 18px; padding:18px; border-radius:12px; background:var(--blue-soft); font-size:18px; line-height:1.8; white-space:pre-wrap; }
 .field-inline { display:flex; align-items:center; gap:10px; font-weight:700; }
 .field-inline .select { min-width:280px; }
 .status-switch { display:flex; flex-wrap:wrap; gap:7px; }
