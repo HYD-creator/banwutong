@@ -123,6 +123,10 @@ async function staticFile(req, res, url) {
   const requested = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\//, "");
   const file = normalize(join(ROOT, requested));
   if (!file.startsWith(ROOT) || !existsSync(file)) {
+    if (!extname(requested)) {
+      res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-cache" });
+      return res.end(await readFile(join(ROOT, "index.html")));
+    }
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); return res.end("页面不存在");
   }
   res.writeHead(200, { "content-type": MIME[extname(file)] || "application/octet-stream", "cache-control": "no-cache" });

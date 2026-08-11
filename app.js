@@ -46,7 +46,8 @@ async function bootstrap() {
   try {
     const auth = await apiFetch("/api/auth/me");
     serverReady = true;
-    if (auth.authenticated) await loadRemoteState();
+    if (window.location.pathname === "/login") state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
+    else if (auth.authenticated) await loadRemoteState();
     else state = { ...initial, tasks: DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() })) };
   } catch {
     serverReady = false;
@@ -63,15 +64,11 @@ function esc(s="") { return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<"
 function route(view) { state.view = view; state.picker = null; persist(); render(); }
 function currentClass() { return state.classInfo?.name || "尚未创建班级"; }
 function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 6) return "夜深了";
-  if (hour < 11) return "上午好";
-  if (hour < 14) return "中午好";
-  if (hour < 18) return "下午好";
-  return "晚上好";
+  return "您好";
 }
 function classCreationForm() {
-  return `<form id="class-form"><h1>创建班级</h1><p class="sub">当前账号同时只管理一个班级。</p><div class="grid two"><div class="field"><label>年级 *</label><select class="select" name="grade">${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n==3?'selected':''}>${["一","二","三","四","五","六"][n-1]}年级</option>`).join("")}</select></div><div class="field"><label>班号 *</label><input class="input" name="number" type="number" min="1" value="2" required /></div></div><div class="grid two"><div class="field"><label>学年 *</label><input class="input" name="year" value="2026—2027" required /></div><div class="field"><label>学期 *</label><select class="select" name="term"><option>上学期</option><option>下学期</option></select></div></div><div class="form-actions"><button class="btn primary">下一步：添加学生</button></div></form>`;
+  const c = state.classInfo || {};
+  return `<form id="class-form"><h1>创建班级</h1><p class="sub">当前账号同时只管理一个班级。</p><div class="grid two"><div class="field"><label>年级 *</label><select class="select" name="grade">${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n===Number(c.grade||3)?'selected':''}>${["一","二","三","四","五","六"][n-1]}年级</option>`).join("")}</select></div><div class="field"><label>班号 *</label><input class="input" name="number" type="number" min="1" value="${esc(c.number||2)}" required /></div></div><div class="grid two"><div class="field"><label>学年 *</label><input class="input" name="year" value="${esc(c.year||'2026—2027')}" required /></div><div class="field"><label>学期 *</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="setup-back-profile">上一步：个人信息</button><button class="btn primary">下一步：添加学生</button></div></form>`;
 }
 function getCell(schedule, taskId, day) { return schedule[`${taskId}:${day}`] || []; }
 function setCell(taskId, day, ids) { state.draft[`${taskId}:${day}`] = ids; state.draftDirty = true; persist(); }
@@ -85,9 +82,9 @@ function setupPage() {
   const step = state.setupStep;
   const steps = ["完善个人信息","创建班级","添加学生"];
   let body = "";
-  if (step === 0) body = `<form id="profile-form"><h1>完善个人信息</h1><p class="sub">这些信息会显示在教师管理首页。</p><div class="grid two"><div class="field"><label>教师姓名 *</label><input class="input" name="name" value="${esc(state.profile?.name || "王老师")}" required /></div><div class="field"><label>学校名称 *</label><input class="input" name="school" value="${esc(state.profile?.school || "实验小学")}" required /></div></div><div class="grid two"><div class="field"><label for="setup-pin">管理密码 *</label><div class="password-field"><input class="input" id="setup-pin" name="pin" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin" aria-pressed="false">显示</button></div></div><div class="field"><label for="setup-pin2">确认管理密码 *</label><div class="password-field"><input class="input" id="setup-pin2" name="pin2" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin2" aria-pressed="false">显示</button></div></div></div><div class="form-actions"><button class="btn primary">保存并继续</button></div></form>`;
+  if (step === 0) body = `<form id="profile-form"><h1>完善个人信息</h1><p class="sub">这些信息会显示在教师管理首页。</p><div class="grid two"><div class="field"><label>教师姓名 *</label><input class="input" name="name" value="${esc(state.profile?.name || "王老师")}" required /></div><div class="field"><label>学校名称 *</label><input class="input" name="school" value="${esc(state.profile?.school || "实验小学")}" required /></div></div><div class="grid two"><div class="field"><label for="setup-pin">管理密码 *</label><div class="password-field"><input class="input" id="setup-pin" name="pin" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin" aria-pressed="false">显示</button></div></div><div class="field"><label for="setup-pin2">确认管理密码 *</label><div class="password-field"><input class="input" id="setup-pin2" name="pin2" type="password" minlength="6" value="${esc(state.profile?.pin || "123456")}" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="setup-pin2" aria-pressed="false">显示</button></div></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="setup-back-login">返回登录</button><button class="btn primary">保存并继续</button></div></form>`;
   if (step === 1) body = classCreationForm();
-  if (step === 2) body = `<div><h1>添加学生</h1><p class="sub">支持手动添加或从 Excel 批量导入，表头使用“姓名、学号、性别”。</p><div class="import-bar"><input type="file" id="excel-import" accept=".xlsx,.xls,.csv" hidden /><button class="btn soft" data-action="import-excel">导入 Excel</button><button class="btn small" data-action="download-template">下载导入模板</button></div><form class="row" id="quick-student" style="margin-top:20px"><input class="input" name="name" placeholder="学生姓名" required /><input class="input" name="number" placeholder="学号（选填）" /><select class="select" name="gender" style="max-width:110px"><option>男</option><option>女</option></select><button class="btn primary">添加</button></form>${studentList()}<div class="form-actions"><button class="btn" data-action="fill-demo">填入示例名单</button><button class="btn primary" data-action="finish-setup" ${state.students.length?'':'disabled'}>完成设置</button></div></div>`;
+  if (step === 2) body = `<div><h1>添加学生</h1><p class="sub">支持手动添加或从 Excel 批量导入，表头使用“姓名、学号、性别”。</p><div class="import-bar"><input type="file" id="excel-import" accept=".xlsx,.xls,.csv" hidden /><button class="btn soft" data-action="import-excel">导入 Excel</button><button class="btn small" data-action="download-template">下载导入模板</button></div><form class="row" id="quick-student" style="margin-top:20px"><input class="input" name="name" placeholder="学生姓名" required /><input class="input" name="number" placeholder="学号（选填）" /><select class="select" name="gender" style="max-width:110px"><option>男</option><option>女</option></select><button class="btn primary">添加</button></form>${studentList()}<div class="form-actions" style="justify-content:space-between"><button class="btn" data-action="setup-back-class">上一步：创建班级</button><div class="row"><button class="btn" data-action="fill-demo">填入示例名单</button><button class="btn primary" data-action="finish-setup" ${state.students.length?'':'disabled'}>完成设置</button></div></div></div>`;
   return `<div class="setup-page"><div class="card setup-card"><div class="steps">${steps.map((x,i)=>`<div class="step ${i===step?'active':i<step?'done':''}">${i+1}. ${x}</div>`).join("")}</div>${body}</div></div>`;
 }
 function studentList() {
@@ -183,11 +180,14 @@ document.addEventListener("click", async e => {
     if(input&&button){const visible=input.type==='text';input.type=visible?'password':'text';button.textContent=visible?'显示':'隐藏';button.setAttribute('aria-pressed',String(!visible));}
     return;
   }
-  if(action==='logout'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';localStorage.removeItem('qinghe-class-manager');render();return;}
+  if(action==='logout'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';localStorage.removeItem('qinghe-class-manager');window.history.replaceState({},'', '/login');render();return;}
+  if(action==='setup-back-login'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.loggedIn=false;state.view='login';window.history.replaceState({},'', '/login');render();return;}
+  if(action==='setup-back-profile'){state.setupStep=0;persist();render();return;}
+  if(action==='setup-back-class'){state.setupStep=1;persist();render();return;}
   if(action==='register'){
     const phone=document.querySelector('[name="phone"]')?.value || '';
     const password=document.querySelector('[name="password"]')?.value || '';
-    try{await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});state={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:0,tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};persist();render();toast('账号注册成功');}catch(error){toast(error.message);}return;
+    try{await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});state={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:0,tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/');persist();render();toast('账号注册成功');}catch(error){toast(error.message);}return;
   }
   if(action==='forgot') toast('演示版验证码：123456');
   if(action==='fill-demo'){state.students=DEFAULT_STUDENTS.map((name,i)=>({id:crypto.randomUUID(),name,number:`S${String(i+1).padStart(3,'0')}`,gender:i%2?'女':'男'}));persist();render();}
@@ -229,7 +229,7 @@ document.addEventListener("change", e => {
 document.addEventListener("submit", async e => {
   e.preventDefault(); const f=new FormData(e.target);
   if(e.target.id==='login-form'){
-    try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.profile){state.view='setup';state.setupStep=0;}else state.view='home';persist();render();}catch(error){toast(error.message);}return;
+    try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.profile){state.view='setup';state.setupStep=0;}else state.view='home';window.history.replaceState({},'', '/');persist();render();}catch(error){toast(error.message);}return;
   }
   if(e.target.id==='profile-form'){if(f.get('pin')!==f.get('pin2'))return toast('两次管理密码不一致');state.profile={name:f.get('name'),school:f.get('school'),pin:f.get('pin')};state.setupStep=1;persist();render();}
   if(e.target.id==='class-form'){const cn=['一','二','三','四','五','六'][Number(f.get('grade'))-1];state.classInfo={name:`${cn}年级（${f.get('number')}）班`,grade:Number(f.get('grade')),number:Number(f.get('number')),year:f.get('year'),term:f.get('term')};state.setupStep=2;persist();render();}
