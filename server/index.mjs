@@ -118,8 +118,10 @@ async function api(req, res, url) {
   }
   if (req.method === "DELETE" && url.pathname === "/api/account") {
     const user = requireUser(req, res); if (!user) return;
-    const { confirmation } = await readJson(req);
+    const { confirmation, password = "" } = await readJson(req);
     if (confirmation !== "注销账号") return json(res, 400, { error: "确认文字不正确" });
+    const teacher = db.prepare("SELECT password_hash, password_salt FROM teachers WHERE id = ?").get(user.id);
+    if (!teacher || !verifyPassword(String(password), teacher.password_salt, teacher.password_hash)) return json(res, 403, { error: "登录密码错误" });
     db.prepare("DELETE FROM teachers WHERE id = ?").run(user.id);
     return json(res, 200, { ok: true }, { "set-cookie": "class_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" });
   }
