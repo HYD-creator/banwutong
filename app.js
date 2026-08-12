@@ -11,6 +11,11 @@ const initial = {
 let saved;
 try { saved = JSON.parse(localStorage.getItem("qinghe-class-manager") || "null"); } catch { saved = null; }
 let state = { ...initial, ...(saved || {}) };
+function keepRecentStudentCalls(){
+  state.studentCalls=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,2);
+  const retained=new Set(state.studentCalls.map(item=>item.id));state.studentCallReceipts=Object.fromEntries(Object.entries(state.studentCallReceipts||{}).filter(([id])=>retained.has(id)));
+}
+keepRecentStudentCalls();
 let serverReady = false;
 let saveTimer = null;
 if (new URLSearchParams(window.location.search).get("logout") === "1") {
@@ -40,6 +45,7 @@ async function loadRemoteState() {
   const result = await apiFetch("/api/state");
   const remote = result.state && Object.keys(result.state).length ? result.state : null;
   state = { ...initial, ...(remote || {}), loggedIn: true, classroomHomeworkUnlocked: false, view: remote?.view === "login" ? "home" : (remote?.view || "setup") };
+  keepRecentStudentCalls();
   if (!state.tasks?.length) state.tasks = DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() }));
 }
 async function bootstrap() {
@@ -158,7 +164,7 @@ function pickerPop(task,day,ids) {
 }
 function announcementsPage() {
   const items=[...(state.announcements||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  const calls=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,10);
+  const calls=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,2);
   const now=Date.now();const current=items.filter(x=>!x.endAt||new Date(x.endAt).getTime()>now);const history=items.filter(x=>x.endAt&&new Date(x.endAt).getTime()<=now);
   const list=(records,empty)=>records.length?records.map(item=>`<article class="card notice-item"><div><p>${esc(item.content)}</p><small>${esc(item.author)} · 发布于 ${new Date(item.createdAt).toLocaleString('zh-CN')}${item.endAt?` · 结束于 ${new Date(item.endAt).toLocaleString('zh-CN')}`:' · 长期有效'}</small></div><div class="row"><button class="btn small" data-edit-announcement="${item.id}">修改</button><button class="btn small danger" data-delete-announcement="${item.id}">删除</button></div></article>`).join(''):`<div class="card empty">${empty}</div>`;
   return shell(`<div class="hero"><div><span class="eyebrow">班级信息</span><h1>班级公告</h1><p class="sub">发布公告或呼叫学生，内容会同步到教室展示模式。</p></div><div class="row"><button class="btn soft" data-action="call-student">呼叫学生</button><button class="btn primary" data-action="add-announcement">＋ 发布公告</button></div></div><div class="section-head"><h2>学生呼叫</h2><span class="sub">最近 ${calls.length} 条</span></div><div class="student-call-list">${calls.length?calls.map(call=>`<article class="card student-call-item"><div><span class="student-call-name">${esc(call.studentName)}</span><p>${esc(call.message)}</p><small>${esc(call.author)} · ${new Date(call.createdAt).toLocaleString('zh-CN')}</small></div><span class="pill ${state.studentCallReceipts?.[call.id]?'green':'orange'}">${state.studentCallReceipts?.[call.id]?'已知晓':'等待回应'}</span></article>`).join(''):'<div class="card empty">还没有呼叫记录。</div>'}</div><div class="section-head"><h2>当前公告</h2><span class="sub">${current.length} 条有效公告</span></div><div class="notice-list">${list(current,'当前没有有效公告。')}</div><div class="section-head"><h2>历史记录</h2><span class="sub">已结束公告</span></div><div class="notice-list">${list(history,'还没有历史公告。')}</div>`,"announcements");
@@ -370,7 +376,7 @@ document.addEventListener("submit", async e => {
     const student=state.students.find(item=>item.id===String(f.get('studentId')||''));if(!student)return toast('请选择需要呼叫的学生');
     const customMessage=String(f.get('customMessage')||'').trim();const message=customMessage||String(f.get('presetMessage')||'请到讲台');
     const call={id:crypto.randomUUID(),studentId:student.id,studentName:student.name,message,author:teacherName(),createdAt:new Date().toISOString()};
-    (state.studentCalls||=[]).unshift(call);if(state.studentCallReceipts)delete state.studentCallReceipts[call.id];state.modal=null;persist();render();toast(`已呼叫${student.name}同学`);return;
+    (state.studentCalls||=[]).unshift(call);if(state.studentCallReceipts)delete state.studentCallReceipts[call.id];keepRecentStudentCalls();state.modal=null;persist();render();toast(`已呼叫${student.name}同学`);return;
   }
   if(e.target.id==='assignment-form'){const item={id:crypto.randomUUID(),subject:String(f.get('subject')||'').trim(),title:String(f.get('title')||'').trim(),date:String(f.get('date')||''),createdAt:new Date().toISOString()};(state.assignments||=[]).unshift(item);state.homeworkDate=item.date;state.homeworkDetailId=null;state.modal=null;persist();render();toast('作业已创建并同步到教室展示模式');return;}
   if(e.target.id==='homework-classroom-settings-form'){
@@ -494,9 +500,9 @@ async function syncDisplayAlerts(){
   try{
     const result=await apiFetch('/api/state');const remote=result.state||{};
     const remoteCalls=remote.studentCalls||[];const callsChanged=JSON.stringify(remoteCalls)!==JSON.stringify(state.studentCalls||[]);
-    state.studentCalls=remoteCalls;state.studentCallReceipts=remote.studentCallReceipts||state.studentCallReceipts||{};
+    state.studentCalls=remoteCalls;state.studentCallReceipts=remote.studentCallReceipts||state.studentCallReceipts||{};keepRecentStudentCalls();
     state.announcements=remote.announcements||state.announcements||[];state.announcementReceipts=remote.announcementReceipts||state.announcementReceipts||{};
-    const pending=[...remoteCalls].filter(item=>!state.studentCallReceipts?.[item.id]).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    const pending=[...state.studentCalls].filter(item=>!state.studentCallReceipts?.[item.id]).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0];
     if(pending&&state.modal?.id!==pending.id){state.modal={type:'student-call-popup',id:pending.id};render();return;}
     if(callsChanged)render();
   }catch{}
