@@ -149,10 +149,22 @@ tr:last-child td { border-bottom: 0; }
 .student-row:last-child { border-bottom: 0; }
 .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
 .notice-list { display:grid; gap:14px; }
+.student-call-list { display:grid; gap:12px; }
+.student-call-item { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 20px; }
+.student-call-item p { margin:5px 0; color:var(--ink); font-weight:700; }
+.student-call-item small { color:var(--muted); }
+.student-call-name { color:var(--blue); font-size:20px; font-weight:850; }
 .notice-item { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:22px; }
 .notice-item p { margin:0 0 14px; color:var(--ink); font-size:20px; font-weight:750; line-height:1.65; white-space:pre-wrap; }
 .notice-item small { color:var(--muted); font-size:13px; font-weight:400; }
 .announcement-popup { border-top:5px solid var(--blue); }
+.student-call-backdrop { background:rgba(20,34,60,.72); }
+.student-call-popup { max-width:560px; text-align:center; border-top:6px solid var(--blue); padding:34px; }
+.student-call-popup .eyebrow { font-size:16px; }
+.student-call-popup h2 { margin:10px 0; font-size:38px; }
+.student-call-popup p { margin:0 0 14px; color:var(--ink); font-size:26px; font-weight:800; }
+.student-call-popup small { color:var(--muted); }
+.student-call-avatar { width:82px; height:82px; margin:24px auto 8px; border-radius:50%; display:grid; place-items:center; background:var(--blue-soft); color:var(--blue); font-size:34px; font-weight:900; }
 .announcement-popup > p { margin:12px 0 18px; padding:18px; border-radius:12px; background:var(--blue-soft); font-size:18px; line-height:1.8; white-space:pre-wrap; }
 .field-inline { display:flex; align-items:center; gap:10px; font-weight:700; }
 .field-inline .select { min-width:280px; }
