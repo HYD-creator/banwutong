@@ -86,7 +86,8 @@ async function api(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const { phone = "", password = "" } = await readJson(req);
     const teacher = db.prepare("SELECT * FROM teachers WHERE phone = ?").get(String(phone));
-    if (!teacher || !verifyPassword(String(password), teacher.password_salt, teacher.password_hash)) return json(res, 401, { error: "手机号或密码错误" });
+    if (!teacher) return json(res, 404, { error: "该手机号尚未注册，请先注册", code: "ACCOUNT_NOT_FOUND" });
+    if (!verifyPassword(String(password), teacher.password_salt, teacher.password_hash)) return json(res, 401, { error: "密码错误，请重新输入", code: "INVALID_PASSWORD" });
     const session = createSession(teacher.id);
     return json(res, 200, { ok: true, phone: teacher.phone }, { "set-cookie": sessionCookie(session.token, session.expires) });
   }
