@@ -105,6 +105,10 @@ function classCreationForm() {
 }
 function getCell(schedule, taskId, day) { return schedule[`${taskId}:${day}`] || []; }
 function setCell(taskId, day, ids) { state.draft[`${taskId}:${day}`] = ids; state.draftDirty = true; persist(); }
+function dutyAssignmentOf(studentId,exceptTaskId=null,exceptDay=null) {
+  for(const task of state.tasks)for(const day of DAYS){if(task.id===exceptTaskId&&day===exceptDay)continue;if(getCell(state.draft,task.id,day).includes(studentId))return {task,day};}
+  return null;
+}
 function weekdayLabel(dateValue) { const day=new Date(`${dateValue}T12:00:00`).getDay(); return day>=1&&day<=5?DAYS[day-1]:null; }
 function isLeaveOnDate(studentId,dateValue) { const day=weekdayLabel(dateValue); return !!state.leaves[`${studentId}:${dateValue}`]||!!(day&&state.leaves[`${studentId}:${day}`]); }
 function isLateOnDate(studentId,dateValue) { const day=weekdayLabel(dateValue); return !!state.lates?.[`${studentId}:${dateValue}`]||!!(day&&state.lates?.[`${studentId}:${day}`]); }
@@ -151,7 +155,7 @@ function displayRollCallPage() {
 }
 function missingCount() { let n=0; state.tasks.forEach(t=>DAYS.forEach(d=>{ if(getCell(state.draft,t.id,d).length<t.count)n++; })); return n; }
 function dutyPage() {
-  return shell(`<div class="hero"><div><span class="eyebrow">值日管理</span><h1>固定周值日表</h1><p class="sub">本安排按周一至周五长期使用，可随时修改并重新发布。</p></div><span class="pill ${state.draftDirty?'orange':'green'}">${state.draftDirty?'有未保存修改':'内容已保存'}</span></div><div class="card"><div class="toolbar"><button class="btn soft" data-action="manual">手动排班</button><button class="btn" data-action="random">一键随机排班</button>${helpPopover('random-rule','随机排班会避开请假学生，并尽量避免同一学生在同一天承担多个任务；生成后仍可手动调整。')}<button class="btn" data-action="add-task">＋ 添加值日任务</button><div class="toolbar-spacer"></div><button class="btn" data-action="export-xls">导出 Excel</button><button class="btn" data-action="export-pdf">导出 PDF</button></div><div class="table-wrap" style="border:0;border-radius:0"><table><thead><tr><th>任务 / 人数</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td class="task-cell"><div class="task-name">${esc(t.name)}</div><div class="task-meta">每天 ${t.count} 人 · <button class="btn small" data-edit-task="${t.id}">编辑</button></div></td>${DAYS.map(day=>pickerCell(t,day)).join("")}</tr>`).join("")}</tbody></table></div><div class="toolbar"><span class="notice">排班检查：${missingCount()} 处人数不足；请假学生会被自动标记。</span>${helpPopover('check-rule','人数不足表示某个任务未达到设定人数；人员冲突表示同一学生在同一天承担了多个任务。')}<div class="toolbar-spacer"></div><button class="btn" data-action="save-draft">保存草稿</button><button class="btn soft" data-action="preview">预览展示效果</button><button class="btn primary" data-action="publish">保存并发布</button></div></div>`, "duty");
+  return shell(`<div class="hero"><div><span class="eyebrow">值日管理</span><h1>固定周值日表</h1><p class="sub">每名学生每周最多承担一天的一个任务；人数不足时对应位置保持空缺。</p></div><span class="pill ${state.draftDirty?'orange':'green'}">${state.draftDirty?'有未保存修改':'内容已保存'}</span></div><div class="card"><div class="toolbar"><button class="btn soft" data-action="manual">手动排班</button><button class="btn" data-action="random">一键随机排班</button>${helpPopover('random-rule','随机排班会避开对应日期请假的学生；每名学生整周只安排一次，人数不足时保留空缺。')}<button class="btn" data-action="add-task">＋ 添加值日任务</button><div class="toolbar-spacer"></div><button class="btn" data-action="export-xls">导出 Excel</button><button class="btn" data-action="export-pdf">导出 PDF</button></div><div class="table-wrap" style="border:0;border-radius:0"><table><thead><tr><th>任务 / 人数</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td class="task-cell"><div class="task-name">${esc(t.name)}</div><div class="task-meta">每天 ${t.count} 人 · <button class="btn small" data-edit-task="${t.id}">编辑</button></div></td>${DAYS.map(day=>pickerCell(t,day)).join("")}</tr>`).join("")}</tbody></table></div><div class="toolbar"><span class="notice">排班检查：${missingCount()} 处人数不足；空缺可以保留。</span>${helpPopover('check-rule','人数不足表示可安排学生数量不足。系统不会为了填满空缺而重复安排同一名学生。')}<div class="toolbar-spacer"></div><button class="btn" data-action="save-draft">保存草稿</button><button class="btn soft" data-action="preview">预览展示效果</button><button class="btn primary" data-action="publish">保存并发布</button></div></div>`, "duty");
 }
 function pickerCell(task, day) {
   const ids=getCell(state.draft,task.id,day); const names=ids.map(id=>state.students.find(s=>s.id===id)).filter(Boolean);
@@ -159,7 +163,7 @@ function pickerCell(task, day) {
   return `<td><div class="student-picker"><button class="${names.length?'filled':''}" data-picker="${task.id}|${day}">${names.length?names.map(s=>`<span class="${isLeave(s.id,day)?'leave-name':''}">${esc(s.name)}</span>`).join('、'):'+ 选择学生'} (${names.length}/${task.count})</button>${open?pickerPop(task,day,ids):''}</div></td>`;
 }
 function pickerPop(task,day,ids) {
-  return `<div class="picker-pop">${state.students.map(s=>`<label class="${isLeave(s.id,day)?'leave':''}"><input type="checkbox" data-pick-student="${s.id}" ${ids.includes(s.id)?'checked':''}/> ${esc(s.name)} ${isLeave(s.id,day)?'（未来请假）':''}</label>`).join("")}<div class="picker-foot"><span class="sub">已选 ${ids.length}/${task.count}</span><button class="btn small primary" data-action="close-picker">完成</button></div></div>`;
+  return `<div class="picker-pop">${state.students.map(s=>{const assigned=dutyAssignmentOf(s.id,task.id,day);const unavailable=!!assigned;return `<label class="${isLeave(s.id,day)?'leave ':''}${unavailable?'unavailable':''}"><input type="checkbox" data-pick-student="${s.id}" ${ids.includes(s.id)?'checked':''} ${unavailable?'disabled':''}/> ${esc(s.name)} ${assigned?`（已安排${assigned.day}·${esc(assigned.task.name)}）`:(isLeave(s.id,day)?'（未来请假）':'')}</label>`}).join("")}<div class="picker-foot"><span class="sub">已选 ${ids.length}/${task.count}</span><button class="btn small primary" data-action="close-picker">完成</button></div></div>`;
 }
 function announcementStatus(item,now=Date.now()) {
   const start=item.startAt?new Date(item.startAt).getTime():new Date(item.createdAt).getTime();
@@ -362,7 +366,7 @@ document.addEventListener("change", e => {
   if(e.target.matches('#homework-stats-period')){state.homeworkStatsPeriod=e.target.value;persist();return;}
   if(e.target.matches('#attendance-stats-period')){state.attendanceStatsPeriod=e.target.value;persist();return;}
   if(e.target.matches('#excel-import')){importStudentExcel(e.target.files?.[0]);return;}
-  if(e.target.matches('[data-pick-student]')){const {taskId,day}=state.picker;const task=state.tasks.find(t=>t.id===taskId);let ids=[...getCell(state.draft,taskId,day)];if(e.target.checked){if(ids.length>=task.count){e.target.checked=false;toast(`该任务最多选择 ${task.count} 人`);return;}ids.push(e.target.dataset.pickStudent);}else ids=ids.filter(x=>x!==e.target.dataset.pickStudent);setCell(taskId,day,ids);render();}
+  if(e.target.matches('[data-pick-student]')){const {taskId,day}=state.picker;const task=state.tasks.find(t=>t.id===taskId);const studentId=e.target.dataset.pickStudent;let ids=[...getCell(state.draft,taskId,day)];if(e.target.checked){const assigned=dutyAssignmentOf(studentId,taskId,day);if(assigned){e.target.checked=false;toast(`该学生已安排在${assigned.day}的${assigned.task.name}`);return;}if(ids.length>=task.count){e.target.checked=false;toast(`该任务最多选择 ${task.count} 人`);return;}ids.push(studentId);}else ids=ids.filter(x=>x!==studentId);setCell(taskId,day,ids);render();}
 });
 document.addEventListener("submit", async e => {
   e.preventDefault(); const f=new FormData(e.target);
@@ -440,9 +444,9 @@ document.addEventListener("submit", async e => {
 });
 function randomSchedule(){
   if(!state.students.length)return toast('请先添加学生');
-  const counts=Object.fromEntries(state.students.map(s=>[s.id,0])); const next={};
-  state.tasks.forEach(task=>DAYS.forEach(day=>{const available=[...state.students].sort((a,b)=>counts[a.id]-counts[b.id]||Math.random()-.5);const usedDay=new Set(state.tasks.flatMap(t=>next[`${t.id}:${day}`]||[]));const chosen=available.filter(s=>!usedDay.has(s.id)).slice(0,task.count).map(s=>s.id);chosen.forEach(id=>counts[id]++);next[`${task.id}:${day}`]=chosen;}));
-  state.draft=next;state.draftDirty=true;persist();render();toast('已重新生成随机排班');
+  const usedWeek=new Set();const next={};
+  state.tasks.forEach(task=>DAYS.forEach(day=>{const available=[...state.students].filter(student=>!usedWeek.has(student.id)&&!isLeave(student.id,day)).sort(()=>Math.random()-.5);const chosen=available.slice(0,task.count).map(student=>student.id);chosen.forEach(id=>usedWeek.add(id));next[`${task.id}:${day}`]=chosen;}));
+  state.draft=next;state.draftDirty=true;persist();render();toast(missingCount()?`排班已生成，${missingCount()} 处人数不足并保持空缺`:'已重新生成随机排班');
 }
 async function importStudentExcel(file){
   if(!file)return;
