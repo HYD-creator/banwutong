@@ -60,6 +60,9 @@ h3 { font-size: 16px; margin: 0; }
 .stats-actions { flex-wrap:wrap; justify-content:flex-end; }
 .stats-actions .btn { flex:0 0 auto; white-space:nowrap; }
 .stats-actions .date-filter { flex:0 0 auto; }
+.attendance-export-stack { width:190px; display:grid; gap:8px; }
+.attendance-export-stack .compact-select,
+.attendance-export-stack .btn { width:100%; }
 .btn:disabled { cursor: not-allowed; opacity: .45; }
 .grid { display: grid; gap: 18px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
