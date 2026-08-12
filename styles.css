@@ -65,7 +65,12 @@ h3 { font-size: 16px; margin: 0; }
 .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
 .grid.four { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .grid.five { grid-template-columns: repeat(5, minmax(0,1fr)); }
-.dashboard-core { margin-top:24px; }
+.dashboard-core {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 1180px;
+  margin-top: 28px;
+}
+.dashboard-core .action-card { min-height: 168px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 4px 18px rgba(36,58,99,.04); }
 .card.pad { padding: 22px; }
 .action-card { text-align: left; padding: 21px; border: 1px solid var(--line); border-radius: 14px; background: #fff; min-height: 145px; transition: .18s ease; display:flex; flex-direction:column; align-items:flex-start; }
