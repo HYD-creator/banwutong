@@ -60,9 +60,6 @@ h3 { font-size: 16px; margin: 0; }
 .stats-actions { flex-wrap:wrap; justify-content:flex-end; }
 .stats-actions .btn { flex:0 0 auto; white-space:nowrap; }
 .stats-actions .date-filter { flex:0 0 auto; }
-.attendance-export-stack { width:190px; display:grid; gap:8px; }
-.attendance-export-stack .compact-select,
-.attendance-export-stack .btn { width:100%; }
 .btn:disabled { cursor: not-allowed; opacity: .45; }
 .grid { display: grid; gap: 18px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -191,6 +188,7 @@ tr:last-child td { border-bottom: 0; }
 .all-submitted { margin-top:18px; padding:20px; border-radius:10px; background:#e9f8f2; color:var(--green); text-align:center; font-weight:750; }
 .homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
 .homework-overview { margin-bottom:24px; }
+.homework-daily-section { margin-bottom:24px; }
 .homework-overview .section-head { margin-top:0; }
 .homework-overview .section-head > div { display:grid; gap:5px; }
 .homework-overview-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
