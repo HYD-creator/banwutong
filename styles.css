@@ -176,6 +176,17 @@ tr:last-child td { border-bottom: 0; }
 .all-submitted { margin-top:18px; padding:20px; border-radius:10px; background:#e9f8f2; color:var(--green); text-align:center; font-weight:750; }
 .homework-date-bar { display:flex; align-items:center; gap:14px; padding-bottom:18px; border-bottom:1px solid var(--line); font-weight:750; }
 .homework-date-bar .input { width:220px; }
+.homework-classroom-summary { display:flex; align-items:center; gap:10px; padding:16px 0 2px; }
+.setting-toggle { display:flex; align-items:flex-start; gap:12px; margin-top:20px; padding:16px; border:1px solid var(--line); border-radius:12px; background:#f8faff; cursor:pointer; }
+.setting-toggle input { width:18px; height:18px; margin-top:2px; accent-color:var(--blue); }
+.setting-toggle span { display:grid; gap:5px; }
+.setting-toggle small { color:var(--muted); line-height:1.5; }
+.pin-input { letter-spacing:.28em; font-weight:800; }
+.classroom-homework-editor { display:grid; gap:0; margin-top:14px; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
+.classroom-homework-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:11px 13px; background:#fff; border-bottom:1px solid var(--line); }
+.classroom-homework-row:last-child { border-bottom:0; }
+.classroom-homework-row > span { display:flex; align-items:center; gap:8px; }
+.classroom-homework-row small { padding:3px 7px; border-radius:999px; background:#fff0f0; color:var(--red); font-weight:700; }
 .homework-list { display:grid; gap:12px; padding-top:18px; }
 .homework-item { width:100%; display:flex; align-items:center; justify-content:space-between; gap:24px; padding:18px 20px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); text-align:left; transition:.16s ease; }
 .homework-item:hover { border-color:#b9cff6; background:#f8fbff; transform:translateY(-1px); }
