@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir, readdir, unlink, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,13 +8,43 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 const ROOT = resolve(import.meta.dirname, "..");
 const DATA_DIR = resolve(process.env.DATA_DIR || join(ROOT, "data"));
 const DB_PATH = resolve(process.env.DB_PATH || join(DATA_DIR, "class-manager.sqlite"));
+const BACKUP_DIR = resolve(process.env.BACKUP_DIR || join(DATA_DIR, "backups"));
 const PORT = Number(process.env.PORT || 4174);
 const SESSION_DAYS = 14;
 const MAX_BODY = 3 * 1024 * 1024;
 
 await mkdir(DATA_DIR, { recursive: true });
+await mkdir(BACKUP_DIR, { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 db.exec(await readFile(join(import.meta.dirname, "schema.sql"), "utf8"));
+try { db.exec("ALTER TABLE teacher_states ADD COLUMN version INTEGER NOT NULL DEFAULT 1"); } catch {}
+try { db.exec("ALTER TABLE teacher_states ADD COLUMN homework_pin_enabled INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE teacher_states ADD COLUMN homework_pin_hash TEXT"); } catch {}
+try { db.exec("ALTER TABLE teacher_states ADD COLUMN homework_pin_salt TEXT"); } catch {}
+
+async function backupDatabase(label) {
+  const stamp = new Date().toISOString().replaceAll(":", "-").replace(".", "-");
+  const target = join(BACKUP_DIR, `class-manager-${label}-${stamp}.sqlite`);
+  db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+  const files = await backupFilesNewestFirst();
+  await Promise.all(files.slice(7).map(file => unlink(join(BACKUP_DIR, file.name))));
+  return target;
+}
+
+async function backupFilesNewestFirst() {
+  const names = (await readdir(BACKUP_DIR)).filter(name => /^class-manager-.*\.sqlite$/.test(name));
+  const files = await Promise.all(names.map(async name => ({ name, info: await stat(join(BACKUP_DIR, name)) })));
+  return files.sort((a,b) => b.info.mtimeMs - a.info.mtimeMs);
+}
+
+async function ensureDailyBackup() {
+  const day = new Date().toISOString().slice(0, 10);
+  const target = join(BACKUP_DIR, `class-manager-${day}.sqlite`);
+  if (!existsSync(target)) db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+  const files = await backupFilesNewestFirst();
+  await Promise.all(files.slice(7).map(file => unlink(join(BACKUP_DIR, file.name))));
+}
+await ensureDailyBackup();
 
 function hashPassword(password, salt = randomBytes(16).toString("hex")) {
   return { salt, hash: scryptSync(password, salt, 64).toString("hex") };
@@ -66,6 +96,17 @@ function sessionCookie(token, expires) {
   return `class_session=${token}; Path=/; HttpOnly; SameSite=Strict; Expires=${expires.toUTCString()}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
 }
 function validPhone(phone) { return /^1\d{10}$/.test(phone); }
+function sanitizeState(value) {
+  const state = JSON.parse(JSON.stringify(value || {}));
+  if (state.profile && typeof state.profile === "object") delete state.profile.pin;
+  delete state.homeworkClassroomPin;
+  delete state.homeworkClassroomEnabled;
+  delete state.classroomHomeworkUnlocked;
+  delete state.attendanceRecords;
+  for (const key of ["view", "picker", "modal", "popover", "backupStatus", "homeworkDetailId", "homeworkDate", "homeworkStatsPeriod", "attendanceFocusDate", "attendanceStatsPeriod"]) delete state[key];
+  return state;
+}
+
 
 async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ok: true, database: "sqlite" });
@@ -96,22 +137,79 @@ async function api(req, res, url) {
     if (token) db.prepare("DELETE FROM sessions WHERE id = ?").run(token);
     return json(res, 200, { ok: true }, { "set-cookie": "class_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" });
   }
+  if (req.method === "POST" && url.pathname === "/api/auth/verify-password") {
+    const user = requireUser(req, res); if (!user) return;
+    const { password = "" } = await readJson(req);
+    const teacher = db.prepare("SELECT password_hash, password_salt FROM teachers WHERE id = ?").get(user.id);
+    if (!teacher || !verifyPassword(String(password), teacher.password_salt, teacher.password_hash)) return json(res, 403, { error: "登录密码错误" });
+    return json(res, 200, { ok: true });
+  }
   if (req.method === "GET" && url.pathname === "/api/state") {
     const user = requireUser(req, res); if (!user) return;
-    const row = db.prepare("SELECT state_json, updated_at FROM teacher_states WHERE teacher_id = ?").get(user.id);
-    return json(res, 200, { state: row ? JSON.parse(row.state_json) : {}, updatedAt: row?.updated_at || null });
+    const row = db.prepare("SELECT state_json, version, updated_at, homework_pin_enabled FROM teacher_states WHERE teacher_id = ?").get(user.id);
+    const stored = row ? JSON.parse(row.state_json) : {};
+    const state = sanitizeState(stored);
+    if (JSON.stringify(state) !== JSON.stringify(stored)) db.prepare("UPDATE teacher_states SET state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE teacher_id = ?").run(JSON.stringify(state), user.id);
+    state.homeworkClassroomEnabled = Boolean(row?.homework_pin_enabled);
+    return json(res, 200, { state, version: row?.version || 1, updatedAt: row?.updated_at || null });
   }
   if (req.method === "PUT" && url.pathname === "/api/state") {
     const user = requireUser(req, res); if (!user) return;
-    const { state } = await readJson(req);
+    const { state, version } = await readJson(req);
     if (!state || typeof state !== "object" || Array.isArray(state)) return json(res, 400, { error: "班级数据格式错误" });
-    const value = JSON.stringify(state);
-    db.prepare(`INSERT INTO teacher_states (teacher_id, state_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(teacher_id) DO UPDATE SET state_json = excluded.state_json, updated_at = CURRENT_TIMESTAMP`).run(user.id, value);
+    if (!Number.isInteger(version) || version < 1) return json(res, 400, { error: "数据版本无效，请刷新页面" });
+    await ensureDailyBackup();
+    const value = JSON.stringify(sanitizeState(state));
+    const result = db.prepare("UPDATE teacher_states SET state_json = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE teacher_id = ? AND version = ?").run(value, user.id, version);
+    if (!result.changes) {
+      const latest = db.prepare("SELECT state_json, version, updated_at FROM teacher_states WHERE teacher_id = ?").get(user.id);
+      return json(res, 409, { error: "数据已在另一页面更新，请刷新后再操作", code: "STATE_CONFLICT", version: latest?.version, updatedAt: latest?.updated_at });
+    }
+    return json(res, 200, { ok: true, version: version + 1 });
+  }
+  if (req.method === "GET" && url.pathname === "/api/backup") {
+    const user = requireUser(req, res); if (!user) return;
+    const row = db.prepare("SELECT state_json, version, updated_at FROM teacher_states WHERE teacher_id = ?").get(user.id);
+    return json(res, 200, { format: "banwutong-backup-v1", createdAt: new Date().toISOString(), phone: user.phone, version: row?.version || 1, state: sanitizeState(row ? JSON.parse(row.state_json) : {}) });
+  }
+  if (req.method === "GET" && url.pathname === "/api/backup/status") {
+    const user = requireUser(req, res); if (!user) return;
+    const files = await backupFilesNewestFirst();
+    return json(res, 200, { automatic: true, count: files.length, retained: 7, latestAt: files[0]?.info?.mtime?.toISOString() || null });
+  }
+  if (req.method === "POST" && url.pathname === "/api/backup/restore") {
+    const user = requireUser(req, res); if (!user) return;
+    const { backup, password = "" } = await readJson(req);
+    const teacher = db.prepare("SELECT password_hash, password_salt FROM teachers WHERE id = ?").get(user.id);
+    if (!teacher || !verifyPassword(String(password), teacher.password_salt, teacher.password_hash)) return json(res, 403, { error: "登录密码错误" });
+    if (backup?.format !== "banwutong-backup-v1" || !backup.state || typeof backup.state !== "object") return json(res, 400, { error: "备份文件格式不正确" });
+    await backupDatabase("pre-restore");
+    const value = JSON.stringify(sanitizeState(backup.state));
+    db.prepare("UPDATE teacher_states SET state_json = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE teacher_id = ?").run(value, user.id);
+    const row = db.prepare("SELECT version FROM teacher_states WHERE teacher_id = ?").get(user.id);
+    return json(res, 200, { ok: true, version: row.version });
+  }
+  if (req.method === "PUT" && url.pathname === "/api/homework-pin") {
+    const user = requireUser(req, res); if (!user) return;
+    const { enabled = false, pin = "" } = await readJson(req);
+    if (enabled && !/^\d{4,8}$/.test(String(pin))) return json(res, 400, { error: "请输入4—8位数字 PIN" });
+    if (!enabled) db.prepare("UPDATE teacher_states SET homework_pin_enabled = 0, homework_pin_hash = NULL, homework_pin_salt = NULL WHERE teacher_id = ?").run(user.id);
+    else { const { salt, hash } = hashPassword(String(pin)); db.prepare("UPDATE teacher_states SET homework_pin_enabled = 1, homework_pin_hash = ?, homework_pin_salt = ? WHERE teacher_id = ?").run(hash, salt, user.id); }
+    return json(res, 200, { ok: true, enabled: Boolean(enabled) });
+  }
+  if (req.method === "POST" && url.pathname === "/api/homework-pin/verify") {
+    const user = requireUser(req, res); if (!user) return;
+    const { pin = "" } = await readJson(req);
+    const row = db.prepare("SELECT homework_pin_enabled, homework_pin_hash, homework_pin_salt FROM teacher_states WHERE teacher_id = ?").get(user.id);
+    if (!row?.homework_pin_enabled) return json(res, 403, { error: "班主任尚未开启教室作业登记" });
+    if (!row.homework_pin_hash || !verifyPassword(String(pin), row.homework_pin_salt, row.homework_pin_hash)) return json(res, 403, { error: "PIN 错误，请重新输入" });
     return json(res, 200, { ok: true });
   }
   if (req.method === "PUT" && url.pathname === "/api/account/password") {
     const user = requireUser(req, res); if (!user) return;
-    const { password = "" } = await readJson(req);
+    const { currentPassword = "", password = "" } = await readJson(req);
+    const teacher = db.prepare("SELECT password_hash, password_salt FROM teachers WHERE id = ?").get(user.id);
+    if (!teacher || !verifyPassword(String(currentPassword), teacher.password_salt, teacher.password_hash)) return json(res, 403, { error: "当前登录密码错误" });
     if (String(password).length < 6) return json(res, 400, { error: "密码至少需要6位" });
     const { salt, hash } = hashPassword(String(password));
     db.prepare("UPDATE teachers SET password_hash = ?, password_salt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(hash, salt, user.id);

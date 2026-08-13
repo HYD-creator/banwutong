@@ -1,11 +1,10 @@
-FROM node:22-alpine
+FROM node:24-bookworm-slim
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY index.html app.js styles.css ./
-COPY public ./public
 COPY server ./server
+COPY public ./public
+COPY app.js index.html styles.css ./
+RUN mkdir -p /app/data
 ENV NODE_ENV=production PORT=4174 DATA_DIR=/app/data
-VOLUME ["/app/data"]
 EXPOSE 4174
-CMD ["npm", "run", "server"]
+VOLUME ["/app/data"]
+CMD ["node", "server/index.mjs"]

@@ -1,91 +1,107 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-const templateRoot = new URL("../", import.meta.url);
-const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
+const root = new URL("../", import.meta.url);
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders the starter loading skeleton", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, developmentPreviewMeta);
-  assert.match(html, /<title>Your site is taking shape<\/title>/i);
-  assert.match(html, /Building your site/);
-  assert.match(html, /Your site is taking shape/);
-  assert.match(
-    html,
-    /Your first version will appear here automatically when it’s ready\./,
-  );
-  assert.doesNotMatch(html, /Codex/);
-  assert.match(html, /react-loading-skeleton/);
-  assert.match(html, /role="status"/);
+test("entry page loads local assets and uses the current port", async () => {
+  const html = await readFile(new URL("index.html", root), "utf8");
+  assert.match(html, /<html lang="zh-CN">/);
+  assert.match(html, /http:\/\/localhost:4174\/login/);
+  assert.doesNotMatch(html, /localhost:8000/);
+  assert.match(html, /\/public\/vendor\/xlsx\.full\.min\.js/);
+  assert.doesNotMatch(html, /cdn\.jsdelivr\.net|unpkg\.com/);
+  await access(new URL("public/vendor/xlsx.full.min.js", root));
 });
 
-test("keeps the loading skeleton scoped and disposable", async () => {
-  const [preview, css, page, layout, packageJson, files] = await Promise.all([
-    readFile(new URL("SkeletonPreview.tsx", previewRoot), "utf8"),
-    readFile(new URL("preview.css", previewRoot), "utf8"),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readdir(previewRoot),
+test("management password is verified by the backend", async () => {
+  const [app, server] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("server/index.mjs", root), "utf8"),
   ]);
+  assert.match(app, /\/api\/auth\/verify-password/);
+  assert.match(server, /url\.pathname === "\/api\/auth\/verify-password"/);
+  assert.doesNotMatch(app, /profile\.pin\s*[=!]=|profile\.pin\s*=|pin:\s*password/);
+  assert.doesNotMatch(app, /pin:password/);
+});
 
-  assert.deepEqual(files.sort(), ["SkeletonPreview.tsx", "preview.css"]);
-  assert.match(preview, /from "react-loading-skeleton"/);
-  assert.match(preview, /baseColor="#eceae7"/);
-  assert.match(preview, /highlightColor="#f9f8f6"/);
-  assert.match(preview, /duration=\{2\.8\}/);
-  assert.match(preview, /sites-skeleton-search-placeholder/);
-  assert.match(packageJson, /"react-loading-skeleton": "3\.5\.0"/);
+test("account deletion only appears in personal information", async () => {
+  const app = await readFile(new URL("app.js", root), "utf8");
+  const classPage = app.slice(app.indexOf("function classPage()"), app.indexOf("function profilePage()"));
+  const profilePage = app.slice(app.indexOf("function profilePage()"), app.indexOf("function displayPage()"));
+  assert.doesNotMatch(classPage, /注销账号/);
+  assert.match(profilePage, /注销账号/);
+});
 
-  const shellIndex = preview.indexOf('className="sites-skeleton-shell"');
-  const statusIndex = preview.indexOf('className="sites-skeleton-status"');
-  assert.ok(shellIndex >= 0 && statusIndex > shellIndex);
-  assert.match(css, /position:\s*fixed/);
-  assert.match(css, /inset:\s*0/);
-  assert.match(css, /opacity:\s*0\.52/);
-  assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.doesNotMatch(css, /#020617|canvas|pets|progress/i);
-  assert.doesNotMatch(
-    preview,
-    /loading-spinner|status-mark|status-progress|canvas|cookie|random/i,
-  );
+test("only the newest student call can trigger a classroom popup", async () => {
+  const app = await readFile(new URL("app.js", root), "utf8");
+  const pending = app.slice(app.indexOf("function pendingDisplayAlert()"), app.indexOf("function showNextDisplayAlert()"));
+  assert.match(pending, /latestCall/);
+  assert.doesNotMatch(pending, /filter\(item=>!state\.studentCallReceipts/);
+});
 
-  assert.match(page, /export const metadata:\s*Metadata/);
-  assert.match(page, /"codex-preview": "development"/);
-  assert.match(page, /<SkeletonPreview \/>/);
-  assert.match(layout, /title:\s*"Starter Project"/);
-  assert.doesNotMatch(layout, /codex-preview|_sites-preview|themeColor|\bViewport\b/);
-  assert.doesNotMatch(css, /(^|\s)(html|body)\s*\{/m);
+test("state writes use optimistic concurrency control", async () => {
+  const [app, server, schema] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("server/index.mjs", root), "utf8"),
+    readFile(new URL("server/schema.sql", root), "utf8"),
+  ]);
+  assert.match(schema, /version INTEGER NOT NULL DEFAULT 1/);
+  assert.match(app, /JSON\.stringify\(\{ state: remoteData, version: stateVersion \}\)/);
+  assert.match(server, /teacher_id = \? AND version = \?/);
+  assert.match(server, /STATE_CONFLICT/);
+});
 
-  await assert.rejects(
-    access(new URL("public/_sites-preview", templateRoot)),
-  );
+test("backup restore is password protected and fake verification codes are absent", async () => {
+  const [app, server] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("server/index.mjs", root), "utf8"),
+  ]);
+  assert.match(app, /\/api\/backup\/restore/);
+  assert.match(server, /url\.pathname === "\/api\/backup\/restore"/);
+  assert.match(server, /verifyPassword\(String\(password\)/);
+  assert.doesNotMatch(app, /123456|reset-pin|send-pin-code/);
+});
+
+test("conflicts and destructive actions use recoverable in-app flows", async () => {
+  const app = await readFile(new URL("app.js", root), "utf8");
+  assert.match(app, /type: "state-conflict"/);
+  assert.match(app, /reload-latest-state/);
+  assert.match(app, /danger-confirm-form/);
+  assert.match(app, /kind==='class'[\s\S]*\/api\/auth\/verify-password/);
+  assert.doesNotMatch(app, /confirm\('确定删除/);
+});
+
+test("backup status is visible and documents restore scope", async () => {
+  const [app, server] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("server/index.mjs", root), "utf8"),
+  ]);
+  assert.match(server, /url\.pathname === "\/api\/backup\/status"/);
+  assert.match(app, /最近自动备份/);
+  assert.match(app, /恢复时会整体替换这些数据/);
+});
+
+test("navigation state is not synchronized and classroom PIN stays server-side", async () => {
+  const [app, server] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("server/index.mjs", root), "utf8"),
+  ]);
+  assert.match(app, /const \{view,picker,modal,popover/);
+  assert.match(server, /delete state\.homeworkClassroomPin/);
+  assert.match(server, /\/api\/homework-pin\/verify/);
+  assert.match(server, /homework_pin_hash/);
+  assert.doesNotMatch(app, /state\.homeworkClassroomPin\s*=/);
+});
+
+test("legacy hidden controls are removed and password change is reachable", async () => {
+  const [app, styles] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("styles.css", root), "utf8"),
+  ]);
+  assert.doesNotMatch(app, /data-action="manual"|id==='profile-form'|action==='coming'/);
+  assert.doesNotMatch(styles, /data-action="manual"/);
+  assert.match(app, /id="change-password-form"/);
+  assert.match(app, /\/api\/account\/password/);
+  assert.match(app, /type:'enter-display'/);
 });

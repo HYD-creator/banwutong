@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS teacher_states (
   teacher_id INTEGER PRIMARY KEY REFERENCES teachers(id) ON DELETE CASCADE,
   state_json TEXT NOT NULL DEFAULT '{}',
+  version INTEGER NOT NULL DEFAULT 1,
+  homework_pin_enabled INTEGER NOT NULL DEFAULT 0,
+  homework_pin_hash TEXT,
+  homework_pin_salt TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

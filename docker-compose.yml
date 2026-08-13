@@ -1,12 +1,13 @@
 services:
-  class-manager:
+  banwutong:
     build: .
-    container_name: class-manager
     restart: unless-stopped
     ports:
       - "4174:4174"
-    volumes:
-      - ./data:/app/data
     environment:
       NODE_ENV: production
       PORT: 4174
+      DATA_DIR: /app/data
+      BACKUP_DIR: /app/data/backups
+    volumes:
+      - ./data:/app/data

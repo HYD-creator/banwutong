@@ -5,12 +5,14 @@ const DEFAULT_TASKS = [
   { id: crypto.randomUUID(), name: "擦黑板", count: 1 },
 ];
 const initial = {
-  loggedIn: false, accountPhone: "", setupStep: 0, profile: null, classInfo: null, students: [], leaves: {}, lates: {},
-  tasks: DEFAULT_TASKS, draft: {}, published: {}, announcements: [], announcementReceipts: {}, studentCalls: [], studentCallReceipts: {}, assignments: [], homeworkStatus: {}, homeworkClassroomEnabled: false, homeworkClassroomPin: "", classroomHomeworkUnlocked: false, attendanceRecords: [], draftDirty: false, view: "login", picker: null, modal: null, popover: null,
+  loggedIn: false, accountPhone: "", setupStep: 0, profile: null, classInfo: null, students: [], leaves: {}, lates: {}, backupStatus: null,
+  tasks: DEFAULT_TASKS, draft: {}, published: {}, announcements: [], announcementReceipts: {}, studentCalls: [], studentCallReceipts: {}, assignments: [], homeworkStatus: {}, homeworkClassroomEnabled: false, classroomHomeworkUnlocked: false, draftDirty: false, view: "login", picker: null, modal: null, popover: null,
 };
 let saved;
 try { saved = JSON.parse(localStorage.getItem("qinghe-class-manager") || "null"); } catch { saved = null; }
 let state = { ...initial, ...(saved || {}) };
+delete state.homeworkClassroomPin;
+delete state.attendanceRecords;
 function keepRecentStudentCalls(){
   state.studentCalls=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,2);
   const retained=new Set(state.studentCalls.map(item=>item.id));state.studentCallReceipts=Object.fromEntries(Object.entries(state.studentCallReceipts||{}).filter(([id])=>retained.has(id)));
@@ -18,6 +20,9 @@ function keepRecentStudentCalls(){
 keepRecentStudentCalls();
 let serverReady = false;
 let saveTimer = null;
+let stateVersion = 1;
+let saveChain = Promise.resolve();
+let serverSnapshot = "";
 if (new URLSearchParams(window.location.search).get("logout") === "1") {
   state.loggedIn = false;
   state.view = "login";
@@ -27,15 +32,38 @@ const app = document.querySelector("#app");
 let rollCallTimer = null;
 
 function persist() {
-  const { picker, modal, popover, classroomHomeworkUnlocked, ...data } = state;
+  const { picker, modal, popover, classroomHomeworkUnlocked, backupStatus, ...data } = state;
+  if (data.profile && "pin" in data.profile) {
+    data.profile = { ...data.profile };
+    delete data.profile.pin;
+    state.profile = data.profile;
+  }
   localStorage.setItem("qinghe-class-manager", JSON.stringify(data));
   if (serverReady && state.loggedIn) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => apiFetch("/api/state", { method: "PUT", body: JSON.stringify({ state: data }) }).catch(() => toast("数据暂未同步，请检查服务器连接")), 250);
+    saveTimer = setTimeout(() => {
+      saveChain = saveChain.then(async () => {
+        const remoteData=remoteStateData(state);const serialized=JSON.stringify(remoteData);
+        if(serialized===serverSnapshot)return;
+        const result = await apiFetch("/api/state", { method: "PUT", body: JSON.stringify({ state: remoteData, version: stateVersion }) });
+        stateVersion = result.version;
+        serverSnapshot=serialized;
+      }).catch(error => {
+        if (error.code === "STATE_CONFLICT") {
+          state.modal = { type: "state-conflict", message: error.message };
+          render();
+        } else toast("数据暂未同步，请检查服务器连接");
+      });
+    }, 250);
   }
 }
+function remoteStateData(source){
+  const {view,picker,modal,popover,classroomHomeworkUnlocked,backupStatus,homeworkDetailId,homeworkDate,homeworkStatsPeriod,attendanceFocusDate,attendanceStatsPeriod,homeworkClassroomEnabled,...data}=source;
+  if(data.profile&&'pin' in data.profile){data.profile={...data.profile};delete data.profile.pin;}
+  return data;
+}
 async function apiFetch(url, options = {}) {
-  if (window.location.protocol === "file:") throw new Error("请通过 http://localhost:8000 打开班务通");
+  if (window.location.protocol === "file:") throw new Error("请通过 http://localhost:4174 打开班务通");
   const response = await fetch(url, { credentials: "same-origin", headers: { "content-type": "application/json", ...(options.headers || {}) }, ...options });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) { const error=new Error(data.error || "请求失败");error.code=data.code;error.status=response.status;throw error; }
@@ -43,10 +71,20 @@ async function apiFetch(url, options = {}) {
 }
 async function loadRemoteState() {
   const result = await apiFetch("/api/state");
+  stateVersion = result.version || 1;
   const remote = result.state && Object.keys(result.state).length ? result.state : null;
-  state = { ...initial, ...(remote || {}), loggedIn: true, classroomHomeworkUnlocked: false, view: remote?.view === "login" ? "home" : (remote?.view || "setup") };
+  state = { ...initial, ...(remote || {}), loggedIn: true, classroomHomeworkUnlocked: false, view: remote?.classInfo&&remote?.students?.length ? "home" : "setup" };
+  if (state.profile && "pin" in state.profile) {
+    state.profile = { ...state.profile };
+    delete state.profile.pin;
+  }
   keepRecentStudentCalls();
+  serverSnapshot=JSON.stringify(remoteStateData(state));
   if (!state.tasks?.length) state.tasks = DEFAULT_TASKS.map(task => ({ ...task, id: crypto.randomUUID() }));
+}
+async function loadBackupStatus(){
+  try{state.backupStatus=await apiFetch('/api/backup/status');render();}
+  catch{state.backupStatus=null;}
 }
 async function bootstrap() {
   try {
@@ -62,6 +100,7 @@ async function bootstrap() {
     state.view = "login";
   }
   render();
+  if(state.loggedIn&&state.view==='profile')loadBackupStatus();
 }
 function toast(message) {
   const el = document.querySelector("#toast"); el.textContent = message; el.classList.add("show");
@@ -117,7 +156,7 @@ function hasUpcomingLeaveOnWeekday(studentId,day) { const today=localDateValue()
 function isLeave(studentId, day) { return hasUpcomingLeaveOnWeekday(studentId,day); }
 
 function loginPage() {
-  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form" autocomplete="off"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" inputmode="numeric" placeholder="请输入11位手机号" maxlength="11" autocomplete="off" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" placeholder="请输入登录密码" autocomplete="new-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button type="button" class="btn small soft" data-action="forgot">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <a class="btn small" href="/register" data-action="register">立即注册</a></p></form></section></div>${modal()}`;
+  return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>把班级日常，安排得清清楚楚。</h1><p>从学生名单到值日排班，一个账号连接教师办公室与教室大屏。</p></div><p>教师管理模式 · 教室展示模式</p></section><section class="auth-panel"><form class="form-card" id="login-form" autocomplete="off"><span class="eyebrow">欢迎回来</span><h1>登录教师账号</h1><p class="sub">登录后默认进入教师管理模式</p><div class="field"><label>手机号</label><input class="input" name="phone" inputmode="numeric" placeholder="请输入11位手机号" maxlength="11" autocomplete="off" required /></div><div class="field"><label for="login-password">密码</label><div class="password-field"><input class="input" id="login-password" name="password" type="password" placeholder="请输入登录密码" autocomplete="new-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="login-password" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button type="button" class="btn small soft" data-action="password-help">忘记密码</button></div><button class="btn primary" style="width:100%;margin-top:22px">登录</button><p class="sub" style="text-align:center;margin-top:18px">还没有账号？ <a class="btn small" href="/register" data-action="register">立即注册</a></p></form></section></div>${modal()}`;
 }
 function registerPage() {
   return `<div class="auth-page"><section class="auth-art"><div class="brand"><span class="brand-mark">班</span>班务通</div><div><h1>创建教师账号，开始管理班级。</h1><p>登录密码同时用于从教室展示模式返回教师管理模式，请妥善保管。</p></div><p>一个账号 · 一个班级 · 两种使用模式</p></section><section class="auth-panel"><form class="form-card" id="register-form"><span class="eyebrow">新用户注册</span><h1>创建教师账号</h1><p class="sub">注册成功后，请返回登录页使用新账号登录。</p><div class="field"><label>手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" placeholder="请输入11位手机号" required /></div><div class="field"><label for="register-password">登录密码 *</label><div class="password-field"><input class="input" id="register-password" name="password" type="password" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="register-password2">确认密码 *</label><div class="password-field"><input class="input" id="register-password2" name="password2" type="password" minlength="6" placeholder="再次输入登录密码" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="register-password2" aria-pressed="false">显示</button></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn" data-action="register-back-login">返回登录</button><button class="btn primary">注册账号</button></div></form></section></div>`;
@@ -145,7 +184,7 @@ function shell(content, active="home") {
   return `<div class="app-shell"><header class="topbar"><div class="brand"><span class="brand-mark">班</span>班务通</div><div class="top-actions"><span class="pill green">教师管理模式</span><button class="btn small" data-action="display">切换到教室展示模式</button><button class="user-chip" data-route="profile" aria-label="打开个人信息"><span class="avatar">${esc(teacherAvatar())}</span>${esc(name)}</button><button class="btn small" data-action="logout">退出登录</button></div></header><div class="layout"><aside class="sidebar">${nav([["home","⌂","管理首页","进入教师管理首页"]])}${nav(core)}<div class="nav-label nav-label-secondary">基础资料</div>${nav(basics)}</aside><main class="main">${content}</main></div>${modal()}</div>`;
 }
 function dashboard() {
-  return shell(`<div class="hero"><div><span class="eyebrow">${esc(state.profile?.school || "实验小学")}</span><h1>${greeting()}，${esc(state.profile?.name || "王老师")}</h1><p class="sub">当前班级：${esc(currentClass())} · ${esc(state.classInfo?.year || "")}${state.classInfo ? ` · ${esc(state.classInfo.term)}`:""}</p></div></div><div class="grid five dashboard-core">${[["点名管理","◉","从当前班级名单随机抽取学生","rollcall"],["公告管理","✉","发布、修改并管理班级公告",""],["值日管理","▦","制作并发布周值日表","duty"],["考勤管理","✓","登记学生请假与迟到","attendance"],["作业管理","▤","登记本学科作业提交情况",""]].map(([t,ic,d,r])=>`<button class="action-card" ${r?`data-route="${r}"`:`data-action="coming"`}><div class="action-icon">${ic}</div><h3>${t}</h3><p>${d}</p></button>`).join("")}</div>`, "home");
+  return shell(`<div class="hero"><div><span class="eyebrow">${esc(state.profile?.school || "实验小学")}</span><h1>${greeting()}，${esc(state.profile?.name || "王老师")}</h1><p class="sub">当前班级：${esc(currentClass())} · ${esc(state.classInfo?.year || "")}${state.classInfo ? ` · ${esc(state.classInfo.term)}`:""}</p></div></div><div class="grid five dashboard-core">${[["点名管理","◉","从当前班级名单随机抽取学生","rollcall"],["公告管理","✉","发布、修改并管理班级公告","announcements"],["值日管理","▦","制作并发布周值日表","duty"],["考勤管理","✓","登记学生请假与迟到","attendance"],["作业管理","▤","登记本学科作业提交情况","homework"]].map(([t,ic,d,r])=>`<button class="action-card" data-route="${r}"><div class="action-icon">${ic}</div><h3>${t}</h3><p>${d}</p></button>`).join("")}</div>`, "home");
 }
 function rollCallPage() {
   return shell(`<div class="hero"><div><span class="eyebrow">课堂互动</span><h1>课堂随机点名</h1><p class="sub">名单来自当前班级，每次从完整名单中随机抽取，允许重复点名。</p></div><span class="pill green">${state.students.length} 名学生</span></div><section class="rollcall-layout"><article class="rollcall-stage"><div class="rollcall-head"><span class="rollcall-pill">${esc(currentClass())}</span><span class="rollcall-pill">允许重复抽取</span></div><div class="rollcall-screen" aria-live="polite"><div><div class="rollcall-eyebrow" id="rollcall-eyebrow">准备好了吗？</div><div class="rollcall-name placeholder" id="rollcall-name">点击下方按钮开始点名</div><div class="rollcall-hint">每次都从当前班级完整名单中随机抽取</div></div></div><button class="rollcall-draw" id="rollcall-draw" data-action="draw-rollcall" ${state.students.length?'':'disabled'}>开始点名</button></article><aside class="rollcall-side"><div class="card pad"><h2>当前班级</h2><div class="rollcall-count"><strong>${state.students.length}</strong><span>名学生</span></div></div><div class="card pad"><h2>使用提示</h2><ol class="rollcall-guide"><li>确认当前班级名单</li><li>点击“开始点名”</li><li>再次点击可继续抽取</li></ol></div></aside></section>`, "rollcall");
@@ -155,7 +194,7 @@ function displayRollCallPage() {
 }
 function missingCount() { let n=0; state.tasks.forEach(t=>DAYS.forEach(d=>{ if(getCell(state.draft,t.id,d).length<t.count)n++; })); return n; }
 function dutyPage() {
-  return shell(`<div class="hero"><div><span class="eyebrow">值日管理</span><h1>固定周值日表</h1><p class="sub">每名学生每周最多承担一天的一个任务；人数不足时对应位置保持空缺。</p></div><span class="pill ${state.draftDirty?'orange':'green'}">${state.draftDirty?'有未保存修改':'内容已保存'}</span></div><div class="card"><div class="toolbar"><button class="btn soft" data-action="manual">手动排班</button><button class="btn" data-action="random">一键随机排班</button>${helpPopover('random-rule','随机排班包含请假学生，每名学生整周只安排一次；请假学生会在表中变灰提示，人数不足时保留空缺。')}<button class="btn" data-action="add-task">＋ 添加值日任务</button><div class="toolbar-spacer"></div><button class="btn" data-action="export-xls">导出 Excel</button><button class="btn" data-action="export-pdf">导出 PDF</button></div><div class="table-wrap" style="border:0;border-radius:0"><table><thead><tr><th>任务 / 人数</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td class="task-cell"><div class="task-name">${esc(t.name)}</div><div class="task-meta">每天 ${t.count} 人 · <button class="btn small" data-edit-task="${t.id}">编辑</button></div></td>${DAYS.map(day=>pickerCell(t,day)).join("")}</tr>`).join("")}</tbody></table></div><div class="toolbar"><span class="notice">排班检查：${missingCount()} 处人数不足；空缺可以保留。</span>${helpPopover('check-rule','人数不足表示可安排学生数量不足。系统不会为了填满空缺而重复安排同一名学生。')}<div class="toolbar-spacer"></div><button class="btn" data-action="save-draft">保存草稿</button><button class="btn soft" data-action="preview">预览展示效果</button><button class="btn primary" data-action="publish">保存并发布</button></div></div>`, "duty");
+  return shell(`<div class="hero"><div><span class="eyebrow">值日管理</span><h1>固定周值日表</h1><p class="sub">每名学生每周最多承担一天的一个任务；人数不足时对应位置保持空缺。</p></div><span class="pill ${state.draftDirty?'orange':'green'}">${state.draftDirty?'有未保存修改':'内容已保存'}</span></div><div class="card"><div class="toolbar"><button class="btn" data-action="random">一键随机排班</button>${helpPopover('random-rule','随机排班包含请假学生，每名学生整周只安排一次；请假学生会在表中变灰提示，人数不足时保留空缺。')}<button class="btn" data-action="add-task">＋ 添加值日任务</button><div class="toolbar-spacer"></div><button class="btn" data-action="export-xls">导出 Excel</button><button class="btn" data-action="export-pdf">导出 PDF</button></div><div class="table-wrap" style="border:0;border-radius:0"><table><thead><tr><th>任务 / 人数</th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td class="task-cell"><div class="task-name">${esc(t.name)}</div><div class="task-meta">每天 ${t.count} 人 · <button class="btn small" data-edit-task="${t.id}">编辑</button></div></td>${DAYS.map(day=>pickerCell(t,day)).join("")}</tr>`).join("")}</tbody></table></div><div class="toolbar"><span class="notice">排班检查：${missingCount()} 处人数不足；空缺可以保留。</span>${helpPopover('check-rule','人数不足表示可安排学生数量不足。系统不会为了填满空缺而重复安排同一名学生。')}<div class="toolbar-spacer"></div><button class="btn" data-action="save-draft">保存草稿</button><button class="btn soft" data-action="preview">预览展示效果</button><button class="btn primary" data-action="publish">保存并发布</button></div></div>`, "duty");
 }
 function pickerCell(task, day) {
   const ids=getCell(state.draft,task.id,day); const names=ids.map(id=>state.students.find(s=>s.id===id)).filter(Boolean);
@@ -173,10 +212,17 @@ function announcementStatus(item,now=Date.now()) {
 function announcementStatusLabel(item) {
   return announcementStatus(item)==='scheduled'?'未开始':(announcementStatus(item)==='history'?'已结束':'展示中');
 }
+function announcementAudience(item){
+  const classroom=item.classroomTarget!==false;
+  const labels=[];
+  if(classroom)labels.push('教室展示屏');
+  return labels.join('、')||'未设置';
+}
 function pendingDisplayAlert() {
-  const pendingCall=[...(state.studentCalls||[])].filter(item=>!state.studentCallReceipts?.[item.id]).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  const latestCall=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  const pendingCall=latestCall&&!state.studentCallReceipts?.[latestCall.id]?latestCall:null;
   if(pendingCall)return {type:'student-call-popup',id:pendingCall.id};
-  const pendingAnnouncement=[...(state.announcements||[])].filter(item=>announcementStatus(item)==='active'&&!state.announcementReceipts?.[item.id]).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)))[0];
+  const pendingAnnouncement=[...(state.announcements||[])].filter(item=>item.classroomTarget!==false&&announcementStatus(item)==='active'&&!state.announcementReceipts?.[item.id]).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)))[0];
   return pendingAnnouncement?{type:'announcement-popup',id:pendingAnnouncement.id}:null;
 }
 function showNextDisplayAlert() {
@@ -186,7 +232,7 @@ function announcementsPage() {
   const items=[...(state.announcements||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   const calls=[...(state.studentCalls||[])].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,2);
   const current=items.filter(item=>announcementStatus(item)==='active');const scheduled=items.filter(item=>announcementStatus(item)==='scheduled');const history=items.filter(item=>announcementStatus(item)==='history');
-  const list=(records,empty,allowRepublish=false)=>records.length?records.map(item=>`<article class="card notice-item"><div class="notice-content"><span class="pill ${announcementStatus(item)==='active'?'green':announcementStatus(item)==='scheduled'?'orange':''}">${announcementStatusLabel(item)}</span><p>${esc(item.content)}</p><small>${esc(item.author)} · 发布于 ${new Date(item.createdAt).toLocaleString('zh-CN')}${item.startAt?` · 开始于 ${new Date(item.startAt).toLocaleString('zh-CN')}`:''}${item.endAt?` · 结束于 ${new Date(item.endAt).toLocaleString('zh-CN')}`:' · 长期有效'}</small></div><div class="row">${allowRepublish?`<button class="btn small" data-republish-announcement="${item.id}">重新发布</button>`:`<button class="btn small" data-edit-announcement="${item.id}">修改</button>`}<button class="btn small danger" data-delete-announcement="${item.id}">删除</button></div></article>`).join(''):`<div class="card empty">${empty}</div>`;
+  const list=(records,empty,allowRepublish=false)=>records.length?records.map(item=>`<article class="card notice-item"><div class="notice-content"><div class="notice-tags"><span class="pill ${announcementStatus(item)==='active'?'green':announcementStatus(item)==='scheduled'?'orange':''}">${announcementStatusLabel(item)}</span><span class="pill">发布对象：${esc(announcementAudience(item))}</span></div>${item.title?`<h3 class="notice-title">${esc(item.title)}</h3>`:''}<p>${esc(item.content)}</p><small>${esc(item.author)} · 发布于 ${new Date(item.createdAt).toLocaleString('zh-CN')}${item.startAt?` · 开始于 ${new Date(item.startAt).toLocaleString('zh-CN')}`:''}${item.endAt?` · 结束于 ${new Date(item.endAt).toLocaleString('zh-CN')}`:' · 长期有效'}</small></div><div class="row">${allowRepublish?`<button class="btn small" data-republish-announcement="${item.id}">重新发布</button>`:`<button class="btn small" data-edit-announcement="${item.id}">修改</button>`}<button class="btn small danger" data-delete-announcement="${item.id}">删除</button></div></article>`).join(''):`<div class="card empty">${empty}</div>`;
   return shell(`<div class="hero"><div><span class="eyebrow">班级信息</span><h1>班级公告</h1><p class="sub">发布公告或呼叫学生，内容会同步到教室展示模式。</p></div><div class="row"><button class="btn soft" data-action="call-student">呼叫学生</button><button class="btn primary" data-action="add-announcement">＋ 发布公告</button></div></div><div class="section-head"><h2>学生呼叫</h2><span class="sub">仅保留最近两条</span></div><div class="student-call-list">${calls.length?calls.map(call=>`<article class="card student-call-item"><div><span class="student-call-name">${esc(call.studentName)}</span><p>${esc(call.message)}</p><small>${esc(call.author)} · ${new Date(call.createdAt).toLocaleString('zh-CN')}</small></div><span class="pill ${state.studentCallReceipts?.[call.id]?'green':'orange'}">${state.studentCallReceipts?.[call.id]?'已知晓':'等待回应'}</span></article>`).join(''):'<div class="card empty">还没有呼叫记录。</div>'}</div><div class="section-head"><h2>当前公告</h2><span class="sub">${current.length} 条展示中</span></div><div class="notice-list">${list(current,'当前没有正在展示的公告。')}</div>${scheduled.length?`<div class="section-head"><h2>待发布</h2><span class="sub">${scheduled.length} 条定时公告</span></div><div class="notice-list">${list(scheduled,'')}</div>`:''}<div class="section-head"><h2>历史记录</h2><span class="sub">到期后自动归档</span></div><div class="notice-list">${list(history,'还没有历史公告。',true)}</div>`,"announcements");
 }
 function homeworkPage() {
@@ -215,17 +261,18 @@ function studentsPage() {
 }
 function classPage() {
   const c=state.classInfo||{};
-  return shell(`<div class="hero"><div><span class="eyebrow">基础资料</span><h1>班级设置</h1><p class="sub">修改当前班级资料，或删除后重新创建班级。</p></div></div><div class="card pad"><form id="edit-class"><div class="grid two"><div class="field"><label>班级名称</label><input class="input" name="name" value="${esc(c.name||'')}" required /></div><div class="field"><label>学年</label><input class="input" name="year" value="${esc(c.year||'')}" required /></div><div class="field"><label>学期</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn danger" data-action="delete-class">删除当前班级</button><button class="btn primary">保存修改</button></div></form></div><section class="danger-zone"><div><h2>危险操作</h2><p class="sub">注销账号后，教师账号、班级资料、学生名单和历史记录将被删除，且无法恢复。</p></div><button class="btn danger" data-action="open-delete-account">注销账号</button></section>`,"class");
+  return shell(`<div class="hero"><div><span class="eyebrow">基础资料</span><h1>班级设置</h1><p class="sub">修改当前班级资料，或删除后重新创建班级。</p></div></div><div class="card pad"><form id="edit-class"><div class="grid two"><div class="field"><label>班级名称</label><input class="input" name="name" value="${esc(c.name||'')}" required /></div><div class="field"><label>学年</label><input class="input" name="year" value="${esc(c.year||'')}" required /></div><div class="field"><label>学期</label><select class="select" name="term"><option ${c.term==='上学期'?'selected':''}>上学期</option><option ${c.term==='下学期'?'selected':''}>下学期</option></select></div></div><div class="form-actions" style="justify-content:space-between"><button type="button" class="btn danger" data-action="delete-class">删除当前班级</button><button class="btn primary">保存修改</button></div></form></div>`,"class");
 }
 function profilePage() {
   const surname = String(state.profile?.surname || "").trim();
   const school = String(state.profile?.school || "").trim();
-  return shell(`<div class="hero"><div><span class="eyebrow">账号资料</span><h1>个人信息</h1><p class="sub">填写后将在管理首页、顶部账号区域和侧边栏显示。</p></div></div><div class="card pad"><form id="profile-info-form"><div class="grid two"><div class="field"><label>教师姓氏</label><input class="input" name="surname" maxlength="8" value="${esc(surname)}" placeholder="例如：王" /></div><div class="field"><label>学校名称</label><input class="input" name="school" maxlength="40" value="${esc(school)}" placeholder="例如：实验小学" /></div></div><p class="sub">教师姓氏填写“王”后，系统将显示为“王老师”。未填写时显示脱敏手机号，学校名称不显示。</p><div class="form-actions"><button class="btn primary">保存个人信息</button></div></form></div><section class="danger-zone profile-danger"><div><h2>危险操作</h2><p class="sub">注销后，教师账号、班级资料、学生名单和历史记录将被删除，且无法恢复。</p></div><button class="btn danger" data-action="open-delete-account">注销账号</button></section>`,"profile");
+  const backup=state.backupStatus;const latest=backup?.latestAt?new Date(backup.latestAt).toLocaleString('zh-CN'):'正在读取…';
+  return shell(`<div class="hero"><div><span class="eyebrow">账号资料</span><h1>个人信息</h1><p class="sub">填写后将在管理首页、顶部账号区域和侧边栏显示。</p></div></div><div class="card pad"><form id="profile-info-form"><div class="grid two"><div class="field"><label>教师姓氏</label><input class="input" name="surname" maxlength="8" value="${esc(surname)}" placeholder="例如：王" /></div><div class="field"><label>学校名称</label><input class="input" name="school" maxlength="40" value="${esc(school)}" placeholder="例如：实验小学" /></div></div><p class="sub">教师姓氏填写“王”后，系统将显示为“王老师”。未填写时显示脱敏手机号，学校名称不显示。</p><div class="form-actions"><button class="btn primary">保存个人信息</button></div></form></div><section class="card pad" style="margin-top:24px"><div class="section-head"><div><h2>账号安全</h2><p class="sub">登录密码同时用于从教室展示模式返回教师管理模式。</p></div><button class="btn" data-action="change-password">修改登录密码</button></div></section><section class="card pad" style="margin-top:24px"><div class="section-head"><div><h2>数据备份</h2><p class="sub">系统每天自动备份数据库，并保留最近 7 份。</p></div><span class="pill ${backup?.latestAt?'green':''}">${backup?.latestAt?'备份正常':'状态读取中'}</span></div><div class="backup-summary"><div><span class="sub">最近自动备份</span><strong>${esc(latest)}</strong></div><div><span class="sub">当前保留</span><strong>${backup?`${backup.count} / ${backup.retained} 份`:'—'}</strong></div></div><p class="sub">手动备份包含当前账号的班级资料、学生、公告、排班、考勤及作业数据。恢复时会整体替换这些数据，并要求验证登录密码。</p><input type="file" id="backup-import" accept="application/json,.json" hidden /><div class="row"><button class="btn" data-action="download-backup">下载数据备份</button><button class="btn soft" data-action="select-backup">恢复备份</button></div></section><section class="danger-zone profile-danger"><div><h2>危险操作</h2><p class="sub">注销后，教师账号、班级资料、学生名单和历史记录将被删，且无法恢复。</p></div><button class="btn danger" data-action="open-delete-account">注销账号</button></section>`,"profile");
 }
 function displayPage() {
   return `<div class="display-page"><div class="display-shell"><div class="display-head"><div><div class="display-title">${esc(currentClass())}</div><div style="opacity:.8;margin-top:4px">教室展示模式</div></div><button class="btn" data-action="back-manage">返回教师管理模式</button></div><div class="display-home"><div class="display-welcome"><span class="eyebrow">班务通 · 课堂功能</span><h1>选择要使用的功能</h1><p class="sub">学生可在教室大屏查看课堂信息；管理设置仍受登录密码保护。</p></div><div class="display-entry-grid"><button class="display-entry rollcall-entry" data-action="display-rollcall"><span class="display-entry-icon">◉</span><span><strong>课堂随机点名</strong><small>从当前班级名单中随机抽取学生</small></span><b>进入 →</b></button><button class="display-entry duty-entry" data-action="display-duty"><span class="display-entry-icon">▦</span><span><strong>本周值日表</strong><small>查看教师已发布的固定周值日安排</small></span><b>进入 →</b></button><button class="display-entry" data-action="display-announcements"><span class="display-entry-icon">✉</span><span><strong>班级公告</strong><small>查看教师发布的最新公告</small></span><b>进入 →</b></button><button class="display-entry" data-action="display-homework"><span class="display-entry-icon">▤</span><span><strong>作业提交</strong><small>查看当前作业与提交情况</small></span><b>进入 →</b></button></div></div></div>${modal()}</div>`;
 }
-function displayAnnouncementsPage(){const items=[...(state.announcements||[])].filter(item=>announcementStatus(item)==='active').sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));return `<div class="display-page"><div class="display-shell"><div class="display-head"><div class="display-title">${esc(currentClass())} · 班级公告</div><button class="btn" data-action="back-display">返回首页</button></div><div class="display-home"><div class="notice-list">${items.length?items.map(x=>`<button class="card notice-item display-notice-card" data-display-announcement="${x.id}" aria-label="放大公示：${esc(x.content)}"><div class="notice-content"><p>${esc(x.content)}</p><small>${esc(x.author)} · ${new Date(x.createdAt).toLocaleString('zh-CN')}${x.endAt?` · 展示至 ${new Date(x.endAt).toLocaleString('zh-CN')}`:''}</small></div><span class="notice-expand">放大公示 →</span></button>`).join(''):`<div class="card empty">暂无公告</div>`}</div></div></div>${modal()}</div>`;}
+function displayAnnouncementsPage(){const items=[...(state.announcements||[])].filter(item=>item.classroomTarget!==false&&announcementStatus(item)==='active').sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));return `<div class="display-page"><div class="display-shell"><div class="display-head"><div class="display-title">${esc(currentClass())} · 班级公告</div><button class="btn" data-action="back-display">返回首页</button></div><div class="display-home"><div class="notice-list">${items.length?items.map(x=>`<button class="card notice-item display-notice-card" data-display-announcement="${x.id}" aria-label="放大公示：${esc(x.content)}"><div class="notice-content"><p>${esc(x.content)}</p><small>${esc(x.author)} · ${new Date(x.createdAt).toLocaleString('zh-CN')}${x.endAt?` · 展示至 ${new Date(x.endAt).toLocaleString('zh-CN')}`:''}</small></div><span class="notice-expand">放大公示 →</span></button>`).join(''):`<div class="card empty">暂无公告</div>`}</div></div></div>${modal()}</div>`;}
 function displayHomeworkPage(){
   const today=localDateValue();const assignments=(state.assignments||[]).filter(item=>assignmentDate(item)===today).sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)));const unlocked=state.homeworkClassroomEnabled&&state.classroomHomeworkUnlocked;
   return `<div class="display-page"><div class="display-shell"><div class="display-head"><div><div class="display-title">${esc(currentClass())} · 作业提交</div><div style="opacity:.8;margin-top:4px">${today} · ${unlocked?'提交状态登记中':'仅显示未交学生'}</div></div><div class="row">${state.homeworkClassroomEnabled?`<button class="btn ${unlocked?'soft':''}" data-action="${unlocked?'lock-classroom-homework':'unlock-classroom-homework'}">${unlocked?'锁定登记':'登记提交状态'}</button>`:''}<button class="btn" data-action="back-display">返回首页</button></div></div><div class="display-home">${assignments.length?`<div class="display-homework-grid">${assignments.map(item=>{const missing=state.students.filter(student=>homeworkStudentStatus(item,student.id)==='未交');return `<section class="card display-homework-card"><div class="display-homework-title"><span class="eyebrow">${esc(item.subject)}</span><h2>${esc(item.title)}</h2><div class="display-homework-counts"><span class="pill orange">未交 ${missing.length}</span></div></div>${unlocked?`<div class="classroom-homework-bulk"><strong>批量登记</strong><div class="row"><button class="btn small soft" data-classroom-homework-bulk="${item.id}|已交">一键全部已交</button><button class="btn small" data-classroom-homework-bulk="${item.id}|未交">一键全部未交</button></div></div><div class="classroom-homework-editor">${state.students.map(student=>{const status=homeworkStudentStatus(item,student.id);return `<div class="classroom-homework-row"><span><strong>${esc(student.name)}</strong>${status==='未交'&&homeworkLeaveLinked(item,student.id)?'<small>请假</small>':''}</span><div class="status-switch">${['已交','未交'].map(value=>`<button class="btn small ${status===value?'primary':''}" data-classroom-homework-status="${item.id}|${student.id}|${value}">${value}</button>`).join('')}</div></div>`}).join('')}</div>`:(missing.length?`<div class="student-status-group"><strong>未交</strong><div class="missing-students">${missing.map(student=>`<span>${esc(student.name)}${homeworkLeaveLinked(item,student.id)?'（请假）':''}</span>`).join('')}</div></div>`:`<div class="all-submitted">无人未交</div>`)}</section>`}).join('')}</div>`:`<div class="card empty">今天暂无作业</div>`}</div></div>${modal()}</div>`;
@@ -236,23 +283,45 @@ function displayDutyPage() {
 }
 function modal() {
   if (!state.modal) return "";
+  if (state.modal.type==='state-conflict') return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><span class="eyebrow">检测到新的数据</span><h2>当前页面需要重新加载</h2></div></div><p class="sub">${esc(state.modal.message||'数据已在另一页面更新。')} 为避免覆盖最新内容，本次修改没有保存。</p><div class="delete-warning"><strong>重新加载后，以服务器上的最新数据为准</strong><p>请记住刚才尚未保存的修改，加载完成后可以重新操作。</p></div><div class="form-actions"><button class="btn primary" data-action="reload-latest-state">重新加载最新数据</button></div></section></div>`;
+  if (state.modal.type==='enter-display') return `<div class="modal-backdrop"><section class="modal"><div class="modal-head"><div><span class="eyebrow">模式切换</span><h2>进入教室展示模式</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">教室展示模式适合投放到课堂大屏。返回教师管理模式时，需要输入教师账号的登录密码。</p><div class="form-actions"><button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-action="confirm-display">确认进入</button></div></section></div>`;
+  if (state.modal.type==='change-password') return `<div class="modal-backdrop"><form class="modal" id="change-password-form"><div class="modal-head"><div><span class="eyebrow">账号安全</span><h2>修改登录密码</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label for="current-password">当前密码 *</label><div class="password-field"><input class="input" id="current-password" type="password" name="currentPassword" autocomplete="current-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="current-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="new-password">新密码 *</label><div class="password-field"><input class="input" id="new-password" type="password" name="password" minlength="6" autocomplete="new-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="new-password" aria-pressed="false">显示</button></div></div><div class="field"><label for="confirm-new-password">确认新密码 *</label><div class="password-field"><input class="input" id="confirm-new-password" type="password" name="password2" minlength="6" autocomplete="new-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="confirm-new-password" aria-pressed="false">显示</button></div></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认修改</button></div></form></div>`;
+  if (state.modal.type==='confirm-danger') {const needsPassword=state.modal.kind==='class';return `<div class="modal-backdrop"><form class="modal" id="danger-confirm-form"><div class="modal-head"><div><span class="eyebrow">危险操作</span><h2>${esc(state.modal.title||'确认删除')}</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="delete-warning"><strong>删除后无法撤销</strong><p>${esc(state.modal.message||'相关数据将被永久删除。')}</p></div>${needsPassword?`<div class="field"><label for="danger-password">当前登录密码 *</label><div class="password-field"><input class="input" id="danger-password" type="password" name="password" autocomplete="current-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="danger-password" aria-pressed="false">显示</button></div></div>`:''}<div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn danger">确认删除</button></div></form></div>`;}
   if (state.modal.type==='task') { const t=state.tasks.find(x=>x.id===state.modal.id); return `<div class="modal-backdrop"><form class="modal" id="task-form"><div class="modal-head"><h2>${t?'编辑':'新增'}值日任务</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>任务名称 *</label><input class="input" name="name" maxlength="15" value="${esc(t?.name||'')}" required /></div><div class="field"><label>每天需要人数 *</label><input class="input" name="count" type="number" min="1" max="8" value="${t?.count||2}" required /></div><div class="form-actions" style="justify-content:${t?'space-between':'flex-end'}">${t?`<button type="button" class="btn danger" data-delete-task="${t.id}">删除任务</button>`:''}<div class="row"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">保存任务</button></div></div></form></div>`; }
   if (state.modal.type==='student') { const s=state.students.find(x=>x.id===state.modal.id); return `<div class="modal-backdrop"><form class="modal" id="student-form"><div class="modal-head"><h2>${s?'修改':'添加'}学生信息</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>学生姓名 *</label><input class="input" name="name" value="${esc(s?.name||'')}" required /></div><div class="field"><label>学号</label><input class="input" name="number" value="${esc(s?.number||'')}" /></div><div class="field"><label>性别</label><select class="select" name="gender"><option ${s?.gender==='男'?'selected':''}>男</option><option ${s?.gender==='女'?'selected':''}>女</option><option ${s?.gender==='未填写'?'selected':''}>未填写</option></select></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">${s?'保存修改':'添加'}</button></div></form></div>`; }
-  if (state.modal.type==='announcement') {const editing=(state.announcements||[]).find(x=>x.id===state.modal.id);const source=editing||(state.announcements||[]).find(x=>x.id===state.modal.copyOf);const localInput=value=>value?new Date(new Date(value).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';const startValue=editing?localInput(source?.startAt):'';const endValue=editing?localInput(source?.endAt):'';return `<div class="modal-backdrop"><form class="modal" id="announcement-form"><div class="modal-head"><h2>${editing?'修改':'发布'}班级公告</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>公告内容 *</label><textarea class="input" name="content" rows="6" maxlength="500" placeholder="请输入公告内容" required>${esc(source?.content||'')}</textarea></div><div class="grid two"><div class="field"><label>开始时间</label><input class="input" type="datetime-local" name="startAt" value="${startValue}" /><p class="sub">不填写表示立即展示。</p></div><div class="field"><label>结束时间</label><input class="input" type="datetime-local" name="endAt" value="${endValue}" /><p class="sub">不填写表示长期有效。</p></div></div><p class="sub">修改展示中的公告后，教室端会重新弹出最新内容；公告到期后自动进入历史记录。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">${editing?'保存修改':'发布公告'}</button></div></form></div>`;}
+  if (state.modal.type==='announcement') {const editing=(state.announcements||[]).find(x=>x.id===state.modal.id);const source=editing||(state.announcements||[]).find(x=>x.id===state.modal.copyOf);const localInput=value=>value?new Date(new Date(value).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';const startValue=editing?localInput(source?.startAt):'';const endValue=editing?localInput(source?.endAt):'';return `<div class="modal-backdrop"><form class="modal announcement-form-modal" id="announcement-form"><div class="modal-head"><h2>${editing?'修改':'发布'}班级公告</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>公告标题 *</label><input class="input" name="title" maxlength="50" value="${esc(source?.title||'班级通知')}" placeholder="例如：周五班会通知" required /></div><div class="field"><label>公告内容 *</label><textarea class="input" name="content" rows="5" maxlength="500" placeholder="请输入公告内容" required>${esc(source?.content||'')}</textarea></div><fieldset class="audience-field"><legend>发布对象</legend><label class="audience-channel"><input type="checkbox" checked disabled/><span><strong>教室展示屏</strong><small>同步到教室展示模式并弹窗提醒</small></span></label></fieldset><div class="grid two"><div class="field"><label>开始时间</label><input class="input" type="datetime-local" name="startAt" value="${startValue}" /><p class="sub">不填写表示立即展示。</p></div><div class="field"><label>结束时间</label><input class="input" type="datetime-local" name="endAt" value="${endValue}" /><p class="sub">不填写表示长期有效。</p></div></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">${editing?'保存修改':'确认发布公告'}</button></div></form></div>`;}
   if (state.modal.type==='call-student') return `<div class="modal-backdrop"><form class="modal" id="call-student-form"><div class="modal-head"><div><span class="eyebrow">教室呼叫</span><h2>呼叫学生</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="field"><label>选择学生 *</label><select class="select" name="studentId" required><option value="">请选择学生</option>${state.students.map(student=>`<option value="${student.id}">${esc(student.name)}${student.number?`（${esc(student.number)}）`:''}</option>`).join('')}</select></div><div class="field"><label>快捷呼叫内容</label><select class="select" name="presetMessage"><option>请到讲台</option><option>请到教师办公室</option></select></div><div class="field"><label>自定义内容</label><input class="input" name="customMessage" maxlength="50" placeholder="选填，例如：请携带作业本到讲台" /><p class="sub">填写后将优先使用自定义内容。</p></div><p class="sub">发布后，教室展示模式会以醒目弹窗显示该学生姓名。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">立即呼叫</button></div></form></div>`;
   if (state.modal.type==='announcement-popup') {const item=(state.announcements||[]).find(x=>x.id===state.modal.id);if(!item)return '';return `<div class="modal-backdrop"><section class="modal announcement-popup"><div class="modal-head"><div><span class="eyebrow">班级公告</span><h2>请查看最新公告</h2></div></div><p>${esc(item.content)}</p><small>${esc(item.author)} · ${new Date(item.createdAt).toLocaleString('zh-CN')}</small><div class="form-actions"><button class="btn primary" data-receive-announcement="${item.id}">已收到</button></div></section></div>`;}
   if (state.modal.type==='announcement-showcase') {const item=(state.announcements||[]).find(x=>x.id===state.modal.id);if(!item)return '';return `<div class="modal-backdrop announcement-showcase-backdrop"><section class="announcement-showcase"><span class="eyebrow">班级公告</span><div class="announcement-showcase-content">${esc(item.content)}</div><div class="announcement-showcase-meta">${esc(item.author)} · ${new Date(item.createdAt).toLocaleString('zh-CN')}</div><button class="btn announcement-showcase-close" data-action="close-modal">关闭公示</button></section></div>`;}
   if (state.modal.type==='student-call-popup') {const call=(state.studentCalls||[]).find(item=>item.id===state.modal.id);if(!call)return '';return `<div class="modal-backdrop student-call-backdrop"><section class="modal student-call-popup"><span class="eyebrow">老师正在呼叫</span><div class="student-call-avatar">${esc(call.studentName.slice(0,1))}</div><h2>${esc(call.studentName)}同学</h2><p>${esc(call.message)}</p><small>${esc(call.author)} · ${new Date(call.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</small><div class="form-actions"><button class="btn primary" data-receive-student-call="${call.id}">已知晓</button></div></section></div>`;}
   if (state.modal.type==='assignment') return `<div class="modal-backdrop"><form class="modal" id="assignment-form"><div class="modal-head"><h2>新建作业</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="grid two"><div class="field"><label>所教学科 *</label><input class="input" name="subject" placeholder="例如：语文" required /></div><div class="field"><label>作业日期 *</label><input class="input" type="date" name="date" value="${esc(state.homeworkDate||localDateValue())}" required /></div></div><div class="field"><label>作业内容 *</label><textarea class="input" name="title" rows="4" maxlength="300" required></textarea></div><p class="sub">保存后，作业日期和提交情况会同步到教室展示模式。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">创建作业</button></div></form></div>`;
-  if (state.modal.type==='homework-classroom-settings') return `<div class="modal-backdrop"><form class="modal" id="homework-classroom-settings-form"><div class="modal-head"><div><span class="eyebrow">教室展示权限</span><h2>教室作业登记设置</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><label class="setting-toggle"><input type="checkbox" name="enabled" ${state.homeworkClassroomEnabled?'checked':''}/><span><strong>允许在教室展示页登记作业</strong><small>开启后，班主任或课代表输入专用 PIN 即可修改提交状态。</small></span></label><div class="field"><label for="classroom-homework-pin">专用 PIN</label><div class="password-field"><input class="input" id="classroom-homework-pin" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" value="${esc(state.homeworkClassroomPin||'')}" placeholder="请输入4—8位数字" /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="classroom-homework-pin" aria-pressed="false">显示</button></div></div><p class="sub">此 PIN 仅用于教室作业登记，不是教师账号登录密码。建议定期更换。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">保存设置</button></div></form></div>`;
+  if (state.modal.type==='homework-classroom-settings') return `<div class="modal-backdrop"><form class="modal" id="homework-classroom-settings-form"><div class="modal-head"><div><span class="eyebrow">教室展示权限</span><h2>教室作业登记设置</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><label class="setting-toggle"><input type="checkbox" name="enabled" ${state.homeworkClassroomEnabled?'checked':''}/><span><strong>允许在教室展示页登记作业</strong><small>开启后，班主任或课代表输入专用 PIN 即可修改提交状态。</small></span></label><div class="field"><label for="classroom-homework-pin">${state.homeworkClassroomEnabled?'设置新的专用 PIN':'专用 PIN'}</label><div class="password-field"><input class="input" id="classroom-homework-pin" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="${state.homeworkClassroomEnabled?'保持开启时需重新输入或更换 PIN':'请输入4—8位数字'}" /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="classroom-homework-pin" aria-pressed="false">显示</button></div></div><p class="sub">PIN 由服务器加密保存，页面不会显示现有 PIN。关闭功能时无需填写。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">保存设置</button></div></form></div>`;
   if (state.modal.type==='classroom-homework-pin') return `<div class="modal-backdrop"><form class="modal classroom-pin-modal" id="classroom-homework-pin-form"><div class="modal-head"><div><span class="eyebrow">身份确认</span><h2>输入作业登记 PIN</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">仅限班主任或课代表使用。验证成功后可修改本页作业提交状态。</p><div class="field"><label for="classroom-pin-entry">专用 PIN</label><div class="password-field"><input class="input pin-input" id="classroom-pin-entry" type="password" name="pin" inputmode="numeric" maxlength="8" autocomplete="off" required autofocus /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="classroom-pin-entry" aria-pressed="false">显示</button></div></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认并开始登记</button></div></form></div>`;
-  if (state.modal.type==='attendance-record') return `<div class="modal-backdrop"><form class="modal" id="attendance-record-form"><div class="modal-head"><h2>新增考勤记录</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="grid two"><div class="field"><label>学生 *</label><select class="select" name="studentId">${state.students.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>状态 *</label><select class="select" name="kind"><option>正常</option><option>事假</option><option>病假</option><option>离校</option></select></div><div class="field"><label>日期 *</label><input class="input" type="date" name="date" value="${new Date().toISOString().slice(0,10)}" required /></div><div class="field"><label>对应星期 *</label><select class="select" name="day">${DAYS.map(d=>`<option>${d}</option>`).join('')}</select></div><div class="field"><label>具体时间段</label><input class="input" name="period" placeholder="例如：第1—2节或全天" /></div><div class="field"><label>请假天数</label><input class="input" type="number" name="days" min="0" step="0.5" value="0" /></div></div><div class="field"><label>备注</label><input class="input" name="note" placeholder="选填" /></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">保存记录</button></div></form></div>`;
   if (state.modal.type==='pin') return `<div class="modal-backdrop"><form class="modal" id="pin-form"><div class="modal-head"><h2>返回教师管理模式</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">请输入教师账号的登录密码，防止学生进入管理功能。</p><div class="field"><label for="manage-pin">登录密码</label><div class="password-field"><input class="input" id="manage-pin" type="password" name="pin" required autofocus /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="manage-pin" aria-pressed="false">显示</button></div></div><div class="row" style="justify-content:flex-end;margin-top:10px"><button type="button" class="btn small soft" data-action="forgot-pin">忘记登录密码？</button></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认返回</button></div></form></div>`;
-  if (state.modal.type==='reset-pin') return `<div class="modal-backdrop"><form class="modal" id="reset-pin-form"><div class="modal-head"><h2>重设管理密码</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">验证账号绑定手机号后，即可设置新的管理密码。演示验证码为 <b>123456</b>。</p><div class="field"><label>绑定手机号 *</label><input class="input" name="phone" inputmode="numeric" maxlength="11" value="${esc(state.accountPhone || '')}" placeholder="请输入11位手机号" required /></div><div class="field"><label>短信验证码 *</label><div class="row"><input class="input" name="code" inputmode="numeric" maxlength="6" placeholder="请输入6位验证码" required /><button type="button" class="btn soft" data-action="send-pin-code">获取验证码</button></div></div><div class="grid two"><div class="field"><label for="reset-pin">新管理密码 *</label><div class="password-field"><input class="input" id="reset-pin" type="password" name="pin" minlength="6" placeholder="至少6位" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="reset-pin" aria-pressed="false">显示</button></div></div><div class="field"><label for="reset-pin2">确认新密码 *</label><div class="password-field"><input class="input" id="reset-pin2" type="password" name="pin2" minlength="6" placeholder="再次输入" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="reset-pin2" aria-pressed="false">显示</button></div></div></div><div class="form-actions"><button type="button" class="btn" data-action="back-pin">返回</button><button class="btn primary">确认重设</button></div></form></div>`;
   if (state.modal.type==='delete-account') return `<div class="modal-backdrop"><form class="modal" id="delete-account-form"><div class="modal-head"><h2>确认注销账号</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="delete-warning"><strong>此操作无法撤销</strong><p>账号、班级、学生、排班、考勤及其他历史记录都会被删除。</p></div><div class="field"><label for="delete-account-password">当前登录密码 *</label><div class="password-field"><input class="input" id="delete-account-password" type="password" name="password" autocomplete="current-password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="delete-account-password" aria-pressed="false">显示</button></div></div><div class="field"><label>请输入“注销账号”进行确认</label><input class="input" name="confirmation" autocomplete="off" required /></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn danger">永久注销账号</button></div></form></div>`;
+  if (state.modal.type==='restore-backup') return `<div class="modal-backdrop"><form class="modal" id="restore-backup-form"><div class="modal-head"><h2>恢复数据备份</h2><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="delete-warning"><strong>当前数据将被备份内容替换</strong><p>系统会先创建自动备份，再执行恢复。</p></div><div class="field"><label>备份文件</label><input class="input" value="${esc(state.modal.fileName||'')}" disabled /></div><div class="field"><label for="restore-password">当前登录密码 *</label><div class="password-field"><input class="input" id="restore-password" type="password" name="password" required /><button type="button" class="password-toggle" data-action="toggle-password" aria-controls="restore-password" aria-pressed="false">显示</button></div></div><div class="form-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary">确认恢复</button></div></form></div>`;
   if (state.modal.type==='register-prompt') return `<div class="modal-backdrop"><section class="modal register-prompt"><div class="modal-head"><div><span class="eyebrow">账号尚未注册</span><h2>需要先创建教师账号</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><p class="sub">手机号 ${esc(state.modal.phone||'')} 尚未注册。完成注册后，再返回登录页使用新账号登录。</p><div class="form-actions"><button type="button" class="btn" data-action="close-modal">暂不注册</button><button class="btn primary" data-action="go-register">立即注册</button></div></section></div>`;
   if (state.modal.type==='duty-preview') return `<div class="modal-backdrop"><section class="modal preview-modal"><div class="modal-head"><div><span class="eyebrow">教室展示效果</span><h2>${esc(currentClass())} · 每周值日表</h2></div><button type="button" class="icon-btn" data-action="close-modal">×</button></div><div class="table-wrap"><table><thead><tr><th>值日任务</th>${DAYS.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>${state.tasks.map(t=>`<tr><td><strong>${esc(t.name)}</strong><div class="sub">${t.count} 人</div></td>${DAYS.map(d=>`<td>${getCell(state.draft,t.id,d).map(id=>esc(state.students.find(s=>s.id===id)?.name||'')).filter(Boolean).join('、')||'<span class="sub">待安排</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div class="preview-foot"><span class="sub">此处仅预览当前草稿，不会切换模式，也不会自动发布。</span><button class="btn primary" data-action="close-modal">关闭预览</button></div></section></div>`;
   return "";
+}
+
+function applyDangerDeletion(kind,id){
+  if(kind==='class'){
+    Object.assign(state,{classInfo:null,students:[],draft:{},published:{},leaves:{},lates:{},announcements:[],announcementReceipts:{},studentCalls:[],studentCallReceipts:{},assignments:[],homeworkStatus:{},setupStep:1,view:'setup'});
+  }else if(kind==='task'){
+    state.tasks=state.tasks.filter(task=>task.id!==id);
+    for(const schedule of [state.draft,state.published])Object.keys(schedule||{}).filter(key=>key.startsWith(`${id}:`)).forEach(key=>delete schedule[key]);
+    state.draftDirty=true;
+  }else if(kind==='student'){
+    state.students=state.students.filter(student=>student.id!==id);
+    for(const schedule of [state.draft,state.published])Object.keys(schedule||{}).forEach(key=>schedule[key]=schedule[key].filter(studentId=>studentId!==id));
+    for(const store of [state.leaves,state.lates,state.homeworkStatus])Object.keys(store||{}).filter(key=>key.includes(id)).forEach(key=>delete store[key]);
+  }else if(kind==='announcement'){
+    state.announcements=(state.announcements||[]).filter(item=>item.id!==id);delete state.announcementReceipts?.[id];
+  }else if(kind==='assignment'){
+    state.assignments=(state.assignments||[]).filter(item=>item.id!==id);Object.keys(state.homeworkStatus||{}).filter(key=>key.startsWith(`${id}:`)).forEach(key=>delete state.homeworkStatus[key]);state.homeworkDetailId=null;
+  }
+  state.modal=null;persist();render();toast(kind==='class'?'班级已删除':'内容已删除');
 }
 function render() {
   if (state.view==='register') app.innerHTML=registerPage();
@@ -278,7 +347,7 @@ function render() {
 document.addEventListener("click", async e => {
   const popoverButton=e.target.closest('[data-popover]');
   if(popoverButton){const id=popoverButton.dataset.popover;state.popover=state.popover===id?null:id;render();return;}
-  const routeBtn=e.target.closest("[data-route]"); if(routeBtn){route(routeBtn.dataset.route);return;}
+  const routeBtn=e.target.closest("[data-route]"); if(routeBtn){const view=routeBtn.dataset.route;route(view);if(view==='profile')loadBackupStatus();return;}
   const attendanceBtn=e.target.closest('[data-attendance]');
   if(attendanceBtn){
     const [type,id,day]=attendanceBtn.dataset.attendance.split('|');
@@ -302,10 +371,10 @@ document.addEventListener("click", async e => {
   }
   if(action==='register-back-login'){state={...initial,view:'login',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();return;}
   if(action==='go-register'){state={...initial,view:'register',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.pushState({},'', '/register');render();return;}
-  if(action==='forgot') toast('演示版验证码：123456');
+  if(action==='password-help') toast('短信找回密码尚未配置，请联系系统管理员');
   if(action==='finish-setup'){state.view='home';persist();render();toast('首次设置完成');}
-  if(action==='coming'){const title=e.target.closest('.action-card')?.querySelector('h3')?.textContent||'';if(title.includes('公告'))route('announcements');else if(title.includes('作业'))route('homework');else toast('该功能将在下一阶段开放');return;}
-  if(action==='display' && confirm('即将进入教室展示模式。返回教师管理模式时，需要输入与教师账号相同的登录密码。是否继续？')){state.view='display';showNextDisplayAlert();persist();render();}
+  if(action==='display'){state.modal={type:'enter-display'};render();return;}
+  if(action==='confirm-display'){state.modal=null;state.view='display';showNextDisplayAlert();persist();render();return;}
   if(action==='display-rollcall'){state.view='display-rollcall';persist();render();}
   if(action==='display-duty'){state.view='display-duty';persist();render();}
   if(action==='display-announcements'){state.view='display-announcements';persist();render();}
@@ -313,10 +382,9 @@ document.addEventListener("click", async e => {
   if(action==='back-display'){state.view='display';state.classroomHomeworkUnlocked=false;persist();render();}
   if(action==='draw-rollcall') startRollCall();
   if(action==='back-manage'){state.modal={type:'pin'};render();}
-  if(action==='forgot-pin'){state.modal={type:'reset-pin'};render();}
-  if(action==='back-pin'){state.modal={type:'pin'};render();}
-  if(action==='send-pin-code') toast('验证码已发送，演示验证码：123456');
+  if(action==='forgot-pin'){toast('短信找回密码尚未配置，请联系系统管理员');return;}
   if(action==='close-modal'){state.modal=null;render();}
+  if(action==='reload-latest-state'){try{await loadRemoteState();state.modal=null;render();toast('已加载最新数据');}catch(error){toast(error.message||'重新加载失败');}return;}
   if(action==='add-task'){state.modal={type:'task'};render();}
   if(action==='add-student'){state.modal={type:'student'};render();}
   if(action==='add-announcement'){state.modal={type:'announcement'};render();}
@@ -326,13 +394,15 @@ document.addEventListener("click", async e => {
   if(action==='unlock-classroom-homework'){state.modal={type:'classroom-homework-pin'};render();}
   if(action==='lock-classroom-homework'){state.classroomHomeworkUnlocked=false;render();toast('教室作业登记已锁定');return;}
   if(action==='back-homework-list'){state.homeworkDetailId=null;persist();render();return;}
-  if(action==='add-attendance-record'){state.modal={type:'attendance-record'};render();}
   if(action==='export-attendance'){exportAttendance();return;}
   if(action==='export-daily-homework'){exportDailyHomework();return;}
   if(action==='export-homework'){exportHomework();return;}
   if(action==='import-excel'){document.querySelector('#excel-import')?.click();return;}
   if(action==='download-template'){downloadStudentTemplate();return;}
   if(action==='open-delete-account'){state.modal={type:'delete-account'};render();}
+  if(action==='change-password'){state.modal={type:'change-password'};render();return;}
+  if(action==='download-backup'){downloadBackup();return;}
+  if(action==='select-backup'){document.querySelector('#backup-import')?.click();return;}
   if(action==='close-picker'){state.picker=null;render();}
   if(action==='random') randomSchedule();
   if(action==='save-draft'){state.draftDirty=false;persist();render();toast('草稿已保存');}
@@ -340,24 +410,23 @@ document.addEventListener("click", async e => {
   if(action==='preview'){state.modal={type:'duty-preview'};render();}
   if(action==='export-xls') exportExcel();
   if(action==='export-pdf'){state.view='display';render();setTimeout(()=>window.print(),100);}
-  if(action==='delete-class' && confirm('确定删除当前班级吗？学生、排班和考勤记录也会被清空。')){state.classInfo=null;state.students=[];state.draft={};state.published={};state.leaves={};state.lates={};state.setupStep=1;state.view='setup';persist();render();}
+  if(action==='delete-class'){state.modal={type:'confirm-danger',kind:'class',title:'删除当前班级',message:'学生名单、排班、公告、考勤和作业记录都会被清空。',id:null};render();return;}
   const edit=e.target.closest('[data-edit-task]'); if(edit){state.modal={type:'task',id:edit.dataset.editTask};render();}
   const editStudent=e.target.closest('[data-edit-student]'); if(editStudent){state.modal={type:'student',id:editStudent.dataset.editStudent};render();return;}
-  const del=e.target.closest('[data-delete-task]'); if(del&&confirm('删除后将同步移除该任务的全部排班，确定继续吗？')){const id=del.dataset.deleteTask;state.tasks=state.tasks.filter(t=>t.id!==id);Object.keys(state.draft).filter(k=>k.startsWith(id+':')).forEach(k=>delete state.draft[k]);state.modal=null;state.draftDirty=true;persist();render();}
-  const remove=e.target.closest('[data-remove-student]'); if(remove&&confirm('确定将该学生移出当前班级吗？')){const id=remove.dataset.removeStudent;state.students=state.students.filter(s=>s.id!==id);Object.keys(state.draft).forEach(k=>state.draft[k]=state.draft[k].filter(x=>x!==id));persist();render();}
+  const del=e.target.closest('[data-delete-task]'); if(del){state.modal={type:'confirm-danger',kind:'task',id:del.dataset.deleteTask,title:'删除值日任务',message:'该任务及其全部排班将被删除。'};render();return;}
+  const remove=e.target.closest('[data-remove-student]'); if(remove){const student=state.students.find(s=>s.id===remove.dataset.removeStudent);state.modal={type:'confirm-danger',kind:'student',id:remove.dataset.removeStudent,title:`移除${student?.name||'该学生'}`,message:'该学生的排班记录也会同步移除。'};render();return;}
   const editAnnouncement=e.target.closest('[data-edit-announcement]');if(editAnnouncement){state.modal={type:'announcement',id:editAnnouncement.dataset.editAnnouncement};render();return;}
   const displayAnnouncement=e.target.closest('[data-display-announcement]');if(displayAnnouncement){state.modal={type:'announcement-showcase',id:displayAnnouncement.dataset.displayAnnouncement};render();return;}
   const republishAnnouncement=e.target.closest('[data-republish-announcement]');if(republishAnnouncement){const source=(state.announcements||[]).find(item=>item.id===republishAnnouncement.dataset.republishAnnouncement);if(source){state.modal={type:'announcement',copyOf:source.id};render();}return;}
   const receiveAnnouncement=e.target.closest('[data-receive-announcement]');if(receiveAnnouncement){(state.announcementReceipts||={})[receiveAnnouncement.dataset.receiveAnnouncement]=true;showNextDisplayAlert();persist();render();return;}
   const receiveStudentCall=e.target.closest('[data-receive-student-call]');if(receiveStudentCall){(state.studentCallReceipts||={})[receiveStudentCall.dataset.receiveStudentCall]=true;showNextDisplayAlert();persist();render();return;}
-  const delAnnouncement=e.target.closest('[data-delete-announcement]');if(delAnnouncement&&confirm('确定删除这条公告吗？')){const id=delAnnouncement.dataset.deleteAnnouncement;state.announcements=(state.announcements||[]).filter(x=>x.id!==id);if(state.announcementReceipts)delete state.announcementReceipts[id];persist();render();return;}
+  const delAnnouncement=e.target.closest('[data-delete-announcement]');if(delAnnouncement){state.modal={type:'confirm-danger',kind:'announcement',id:delAnnouncement.dataset.deleteAnnouncement,title:'删除班级公告',message:'公告及其已收到记录将被删除。'};render();return;}
   const homeworkDetail=e.target.closest('[data-homework-detail]');if(homeworkDetail){state.homeworkDetailId=homeworkDetail.dataset.homeworkDetail;persist();render();return;}
-  const deleteAssignment=e.target.closest('[data-delete-assignment]');if(deleteAssignment&&confirm('确定删除这项作业吗？相关提交记录也会一并删除。')){const id=deleteAssignment.dataset.deleteAssignment;state.assignments=(state.assignments||[]).filter(item=>item.id!==id);Object.keys(state.homeworkStatus||{}).filter(key=>key.startsWith(`${id}:`)).forEach(key=>delete state.homeworkStatus[key]);state.homeworkDetailId=null;persist();render();toast('作业已删除');return;}
+  const deleteAssignment=e.target.closest('[data-delete-assignment]');if(deleteAssignment){state.modal={type:'confirm-danger',kind:'assignment',id:deleteAssignment.dataset.deleteAssignment,title:'删除这项作业',message:'该作业及其全部提交记录将被删除。'};render();return;}
   const homeworkBulk=e.target.closest('[data-homework-bulk]');if(homeworkBulk){const [assignmentId,status]=homeworkBulk.dataset.homeworkBulk.split('|');const assignment=(state.assignments||[]).find(item=>item.id===assignmentId);if(assignment){state.students.forEach(student=>(state.homeworkStatus||={})[`${assignmentId}:${student.id}`]=status);persist();render();toast(status==='已交'?'已将全部学生设为已交':'已将全部学生设为未交');}return;}
   const homeworkStatus=e.target.closest('[data-homework-status]');if(homeworkStatus){const [assignmentId,studentId,status]=homeworkStatus.dataset.homeworkStatus.split('|');(state.homeworkStatus||={})[`${assignmentId}:${studentId}`]=status;persist();render();return;}
   const classroomHomeworkStatus=e.target.closest('[data-classroom-homework-status]');if(classroomHomeworkStatus){if(!state.homeworkClassroomEnabled||!state.classroomHomeworkUnlocked)return toast('请先输入专用 PIN');const [assignmentId,studentId,status]=classroomHomeworkStatus.dataset.classroomHomeworkStatus.split('|');(state.homeworkStatus||={})[`${assignmentId}:${studentId}`]=status;persist();render();return;}
   const classroomHomeworkBulk=e.target.closest('[data-classroom-homework-bulk]');if(classroomHomeworkBulk){if(!state.homeworkClassroomEnabled||!state.classroomHomeworkUnlocked)return toast('请先输入专用 PIN');const [assignmentId,status]=classroomHomeworkBulk.dataset.classroomHomeworkBulk.split('|');state.students.forEach(student=>(state.homeworkStatus||={})[`${assignmentId}:${student.id}`]=status);persist();render();toast(status==='已交'?'已将全部学生设为已交':'已将全部学生设为未交');return;}
-  const delAttendance=e.target.closest('[data-delete-attendance]');if(delAttendance&&confirm('确定删除这条考勤记录吗？')){state.attendanceRecords=(state.attendanceRecords||[]).filter(x=>x.id!==delAttendance.dataset.deleteAttendance);persist();render();return;}
   const picker=e.target.closest('[data-picker]'); if(picker){const [taskId,day]=picker.dataset.picker.split('|');state.picker={taskId,day};render();}
 });
 document.addEventListener("change", e => {
@@ -366,10 +435,19 @@ document.addEventListener("change", e => {
   if(e.target.matches('#homework-stats-period')){state.homeworkStatsPeriod=e.target.value;persist();return;}
   if(e.target.matches('#attendance-stats-period')){state.attendanceStatsPeriod=e.target.value;persist();return;}
   if(e.target.matches('#excel-import')){importStudentExcel(e.target.files?.[0]);return;}
+  if(e.target.matches('#backup-import')){prepareBackupRestore(e.target.files?.[0]);return;}
   if(e.target.matches('[data-pick-student]')){const {taskId,day}=state.picker;const task=state.tasks.find(t=>t.id===taskId);const studentId=e.target.dataset.pickStudent;let ids=[...getCell(state.draft,taskId,day)];if(e.target.checked){const assigned=dutyAssignmentOf(studentId,taskId,day);if(assigned){e.target.checked=false;toast(`该学生已安排在${assigned.day}的${assigned.task.name}`);return;}if(ids.length>=task.count){e.target.checked=false;toast(`该任务最多选择 ${task.count} 人`);return;}ids.push(studentId);}else ids=ids.filter(x=>x!==studentId);setCell(taskId,day,ids);render();}
 });
 document.addEventListener("submit", async e => {
   e.preventDefault(); const f=new FormData(e.target);
+  if(e.target.id==='danger-confirm-form'){
+    const {kind,id}=state.modal||{};
+    if(kind==='class'){
+      try{await apiFetch('/api/auth/verify-password',{method:'POST',body:JSON.stringify({password:String(f.get('password')||'')})});}
+      catch(error){toast(error.message);return;}
+    }
+    applyDangerDeletion(kind,id);return;
+  }
   if(e.target.id==='login-form'){
     try{await apiFetch('/api/auth/login',{method:'POST',body:JSON.stringify({phone:String(f.get('phone')||''),password:String(f.get('password')||'')})});await loadRemoteState();state.accountPhone=String(f.get('phone')||'');if(!state.classInfo){state.view='setup';state.setupStep=1;}else state.view='home';window.history.replaceState({},'', '/');persist();render();}catch(error){if(error.code==='ACCOUNT_NOT_FOUND'){state.modal={type:'register-prompt',phone:String(f.get('phone')||'')};render();}else toast(error.message);}return;
   }
@@ -382,23 +460,27 @@ document.addEventListener("submit", async e => {
     if(password!==password2) return toast('两次输入的密码不一致');
     try{
       await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify({phone,password})});
-      const registeredState={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:1,profile:{name:`${phone.slice(0,3)}****${phone.slice(-4)}`,school:' ',pin:password},tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};
-      await apiFetch('/api/state',{method:'PUT',body:JSON.stringify({state:registeredState})});
+      const registeredState={...initial,loggedIn:true,accountPhone:phone,view:'setup',setupStep:1,profile:{name:`${phone.slice(0,3)}****${phone.slice(-4)}`,school:' '},tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};
+      await apiFetch('/api/state',{method:'PUT',body:JSON.stringify({state:registeredState,version:1})});
       await apiFetch('/api/auth/logout',{method:'POST'});
       state={...initial,view:'login',tasks:DEFAULT_TASKS.map(task=>({...task,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();toast('注册成功，请使用新账号登录');
     }catch(error){toast(error.message);}return;
   }
-  if(e.target.id==='profile-form'){if(f.get('pin')!==f.get('pin2'))return toast('两次管理密码不一致');state.profile={name:f.get('name'),school:f.get('school'),pin:f.get('pin')};state.setupStep=1;persist();render();}
   if(e.target.id==='profile-info-form'){
     const surname=String(f.get('surname')||'').trim();
     const school=String(f.get('school')||'').trim();
     state.profile={...(state.profile||{}),surname,name:surname?`${surname}老师`:maskedPhone(),school:school||' '};
     persist();render();toast('个人信息已保存');return;
   }
+  if(e.target.id==='change-password-form'){
+    const currentPassword=String(f.get('currentPassword')||'');const password=String(f.get('password')||'');const password2=String(f.get('password2')||'');
+    if(password.length<6)return toast('新密码至少需要6位');if(password!==password2)return toast('两次输入的新密码不一致');
+    try{await apiFetch('/api/account/password',{method:'PUT',body:JSON.stringify({currentPassword,password})});state.modal=null;render();toast('登录密码已修改');}catch(error){toast(error.message);}return;
+  }
   if(e.target.id==='class-form'){const grade=String(f.get('grade')||'').trim();const gradeLabel=/年级$|^高[一二三123]$/.test(grade)?grade:`${grade}年级`;state.classInfo={name:`${gradeLabel}（${f.get('number')}）班`,grade,number:Number(f.get('number')),year:f.get('year'),term:f.get('term')};state.setupStep=2;persist();render();}
   if(e.target.id==='quick-student'){state.students.push({id:crypto.randomUUID(),name:f.get('name'),number:f.get('number'),gender:f.get('gender')});state.modal=null;persist();render();}
   if(e.target.id==='student-form'){const id=state.modal?.id;const data={id:id||crypto.randomUUID(),name:String(f.get('name')||'').trim(),number:String(f.get('number')||'').trim(),gender:f.get('gender')};if(id)state.students=state.students.map(s=>s.id===id?data:s);else state.students.push(data);state.modal=null;persist();render();toast(id?'学生信息已更新':'学生已添加');}
-  if(e.target.id==='announcement-form'){const id=state.modal?.id;const existing=(state.announcements||[]).find(item=>item.id===id);const startRaw=String(f.get('startAt')||'');const endRaw=String(f.get('endAt')||'');const startAt=startRaw?new Date(startRaw).toISOString():null;const endAt=endRaw?new Date(endRaw).toISOString():null;if(startAt&&endAt&&new Date(endAt)<=new Date(startAt))return toast('结束时间必须晚于开始时间');if(!startAt&&endAt&&new Date(endAt)<=new Date())return toast('结束时间必须晚于当前时间');const item={id:id||crypto.randomUUID(),content:String(f.get('content')||'').trim(),author:teacherName(),createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),startAt,endAt};if(id)state.announcements=state.announcements.map(current=>current.id===id?item:current);else(state.announcements||=[]).unshift(item);if(state.announcementReceipts)delete state.announcementReceipts[item.id];state.modal=null;persist();render();toast(id?'公告已修改，教室端将重新提示':'公告已发布');return;}
+  if(e.target.id==='announcement-form'){const id=state.modal?.id;const existing=(state.announcements||[]).find(item=>item.id===id);const startRaw=String(f.get('startAt')||'');const endRaw=String(f.get('endAt')||'');const startAt=startRaw?new Date(startRaw).toISOString():null;const endAt=endRaw?new Date(endRaw).toISOString():null;if(startAt&&endAt&&new Date(endAt)<=new Date(startAt))return toast('结束时间必须晚于开始时间');if(!startAt&&endAt&&new Date(endAt)<=new Date())return toast('结束时间必须晚于当前时间');const item={id:id||crypto.randomUUID(),title:String(f.get('title')||'').trim(),content:String(f.get('content')||'').trim(),author:teacherName(),createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString(),startAt,endAt,classroomTarget:true};if(id)state.announcements=state.announcements.map(current=>current.id===id?item:current);else(state.announcements||=[]).unshift(item);if(state.announcementReceipts)delete state.announcementReceipts[item.id];state.modal=null;persist();render();toast(id?'公告已修改，教室端将重新提示':'公告已发布');return;}
   if(e.target.id==='call-student-form'){
     const student=state.students.find(item=>item.id===String(f.get('studentId')||''));if(!student)return toast('请选择需要呼叫的学生');
     const customMessage=String(f.get('customMessage')||'').trim();const message=customMessage||String(f.get('presetMessage')||'请到讲台');
@@ -409,37 +491,25 @@ document.addEventListener("submit", async e => {
   if(e.target.id==='homework-classroom-settings-form'){
     const enabled=f.get('enabled')==='on';const pin=String(f.get('pin')||'').trim();
     if(enabled&&!/^\d{4,8}$/.test(pin))return toast('开启教室登记时，请设置4—8位数字 PIN');
-    state.homeworkClassroomEnabled=enabled;state.homeworkClassroomPin=enabled?pin:'';state.classroomHomeworkUnlocked=false;state.modal=null;persist();render();toast(enabled?'教室作业登记已开启':'教室作业登记已关闭');return;
+    try{const result=await apiFetch('/api/homework-pin',{method:'PUT',body:JSON.stringify({enabled,pin})});state.homeworkClassroomEnabled=result.enabled;state.classroomHomeworkUnlocked=false;state.modal=null;render();toast(enabled?'教室作业登记已开启':'教室作业登记已关闭');}catch(error){toast(error.message);}return;
   }
   if(e.target.id==='classroom-homework-pin-form'){
-    if(!state.homeworkClassroomEnabled)return toast('班主任尚未开启教室作业登记');
-    if(String(f.get('pin')||'')!==String(state.homeworkClassroomPin||''))return toast('PIN 错误，请重新输入');
-    state.classroomHomeworkUnlocked=true;state.modal=null;render();toast('验证成功，可以登记提交状态');return;
+    try{await apiFetch('/api/homework-pin/verify',{method:'POST',body:JSON.stringify({pin:String(f.get('pin')||'')})});state.classroomHomeworkUnlocked=true;state.modal=null;render();toast('验证成功，可以登记提交状态');}catch(error){toast(error.message);}return;
   }
-  if(e.target.id==='attendance-record-form'){const record={id:crypto.randomUUID(),studentId:String(f.get('studentId')),kind:String(f.get('kind')),date:String(f.get('date')),day:String(f.get('day')),period:String(f.get('period')||'').trim(),days:Number(f.get('days')||0),note:String(f.get('note')||'').trim()};(state.attendanceRecords||=[]).push(record);const key=`${record.studentId}:${record.day}`;if(record.kind==='正常')delete state.leaves[key];else state.leaves[key]=true;state.modal=null;persist();render();toast('考勤记录已保存');return;}
   if(e.target.id==='task-form'){const id=state.modal.id;const data={id:id||crypto.randomUUID(),name:f.get('name'),count:Number(f.get('count'))};if(id)state.tasks=state.tasks.map(t=>t.id===id?data:t);else state.tasks.push(data);state.modal=null;state.draftDirty=true;persist();render();}
   if(e.target.id==='edit-class'){state.classInfo={...state.classInfo,name:f.get('name'),year:f.get('year'),term:f.get('term')};persist();render();toast('班级信息已保存');}
-  if(e.target.id==='pin-form'){if(f.get('pin')!==state.profile.pin)return toast('登录密码错误');state.modal=null;state.view='home';persist();render();}
-  if(e.target.id==='reset-pin-form'){
-    const phone=String(f.get('phone') || '').trim();
-    const code=String(f.get('code') || '').trim();
-    const pin=String(f.get('pin') || '');
-    const pin2=String(f.get('pin2') || '');
-    if(!/^1\d{10}$/.test(phone)) return toast('请输入正确的11位手机号');
-    if(state.accountPhone && phone!==state.accountPhone) return toast('手机号与当前账号不一致');
-    if(code!=='123456') return toast('验证码错误');
-    if(pin.length<6) return toast('管理密码至少需要6位');
-    if(pin!==pin2) return toast('两次输入的新密码不一致');
-    try{await apiFetch('/api/account/password',{method:'PUT',body:JSON.stringify({password:pin})});}catch(error){return toast(error.message);}
-    state.accountPhone=phone;
-    state.profile={...(state.profile || {}),pin};
-    state.modal={type:'pin'};
-    persist();render();toast('管理密码重设成功，请使用新密码返回');
+  if(e.target.id==='pin-form'){
+    try{await apiFetch('/api/auth/verify-password',{method:'POST',body:JSON.stringify({password:String(f.get('pin')||'')})});state.modal=null;state.view='home';persist();render();}
+    catch(error){toast(error.message);}return;
   }
   if(e.target.id==='delete-account-form'){
     if(String(f.get('confirmation') || '').trim()!=='注销账号') return toast('请输入“注销账号”后再确认');
     const password=String(f.get('password')||'');if(!password)return toast('请输入当前登录密码');
     try{await apiFetch('/api/account',{method:'DELETE',body:JSON.stringify({confirmation:'注销账号',password})});localStorage.removeItem('qinghe-class-manager');state={...initial,tasks:DEFAULT_TASKS.map(t=>({...t,id:crypto.randomUUID()}))};window.history.replaceState({},'', '/login');render();toast('账号已注销');}catch(error){toast(error.message);}
+  }
+  if(e.target.id==='restore-backup-form'){
+    const backup=state.modal?.backup;const password=String(f.get('password')||'');
+    try{const result=await apiFetch('/api/backup/restore',{method:'POST',body:JSON.stringify({backup,password})});stateVersion=result.version||stateVersion;await loadRemoteState();state.modal=null;render();toast('备份已恢复');}catch(error){toast(error.message);}return;
   }
 });
 function randomSchedule(){
@@ -499,6 +569,8 @@ function exportExcel(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'application/vnd.ms-excel'}));a.download=`${currentClass()}_每周值日表.xls`;a.click();URL.revokeObjectURL(a.href);toast('Excel 已导出');
 }
 function downloadCsv(filename,rows){const csv='\ufeff'+rows.map(row=>row.map(value=>`"${String(value??'').replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=filename;a.click();URL.revokeObjectURL(a.href);}
+async function downloadBackup(){try{const backup=await apiFetch('/api/backup');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.download=`${currentClass()}_${localDateValue()}_班务通备份.json`;a.click();URL.revokeObjectURL(a.href);toast('数据备份已下载');}catch(error){toast(error.message);}}
+async function prepareBackupRestore(file){if(!file)return;try{const backup=JSON.parse(await file.text());if(backup?.format!=='banwutong-backup-v1'||!backup.state)throw new Error('备份文件格式不正确');state.modal={type:'restore-backup',fileName:file.name,backup};render();}catch(error){toast(error.message||'备份文件无法读取');}}
 function exportAttendance(){
   const period=state.attendanceStatsPeriod||'week';const range=statisticRange(period,state.attendanceFocusDate||localDateValue());
   const affected=state.students.map(student=>{
@@ -526,10 +598,10 @@ function exportHomework(){
 async function syncDisplayAlerts(){
   if(!serverReady||!state.loggedIn||!String(state.view).startsWith('display'))return;
   try{
-    const result=await apiFetch('/api/state');const remote=result.state||{};
+    const result=await apiFetch('/api/state');const remote=result.state||{};stateVersion=result.version||stateVersion;
     const remoteCalls=remote.studentCalls||[];const callsChanged=JSON.stringify(remoteCalls)!==JSON.stringify(state.studentCalls||[]);
     const remoteAnnouncements=remote.announcements||[];const announcementsChanged=JSON.stringify(remoteAnnouncements)!==JSON.stringify(state.announcements||[]);
-    state.studentCalls=remoteCalls;state.studentCallReceipts=remote.studentCallReceipts||state.studentCallReceipts||{};keepRecentStudentCalls();
+    state.studentCalls=remoteCalls;state.studentCallReceipts={...(remote.studentCallReceipts||{}),...(state.studentCallReceipts||{})};keepRecentStudentCalls();
     state.announcements=remoteAnnouncements;state.announcementReceipts=remote.announcementReceipts||state.announcementReceipts||{};
     const pending=pendingDisplayAlert();
     if(pending&&state.modal?.id!==pending.id){state.modal=pending;render();return;}
